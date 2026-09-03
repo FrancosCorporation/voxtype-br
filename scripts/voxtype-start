@@ -1,0 +1,35 @@
+#!/bin/bash
+# voxtype-start — Inicia o daemon do Voxtype com GPU (Vulkan).
+# Uso: ./voxtype-start
+set -e
+
+# Garante que o OSD está no PATH
+if [ -x "$HOME/.local/bin/voxtype-osd" ] && ! command -v voxtype-osd >/dev/null 2>&1; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
+# Verifica o daemon do ydotool (necessário para injeção no Wayland)
+if ! pgrep -x ydotoold >/dev/null 2>&1; then
+    echo "⚠️  ydotoold não está rodando. Inicie-o primeiro (sudo ydotoold &)" >&2
+    exit 1
+fi
+
+# Mata daemons antigos do voxtype
+pkill -f "voxtype-.* daemon" 2>/dev/null || true
+sleep 1
+
+# Inicia com GPU Vulkan (VOXTYPE_GPU=1 faz o wrapper escolher o binário vulkan)
+echo "🚀 Iniciando Voxtype com GPU (Vulkan)..."
+setsid nohup env VOXTYPE_GPU=1 voxtype daemon > /tmp/voxtype.log 2>&1 < /dev/null &
+disown
+
+sleep 4
+
+if pgrep -f "voxtype-vulkan daemon" >/dev/null 2>&1; then
+    echo "✅ Voxtype rodando com GPU Vulkan!"
+    echo "   Atalho: Ctrl+Shift+Espaço (1ª = grava, 2ª = cola)"
+    echo "   Log:    tail -f /tmp/voxtype.log"
+else
+    echo "❌ Falha ao iniciar. Veja /tmp/voxtype.log" >&2
+    exit 1
+fi

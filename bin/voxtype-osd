@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""Voxtype OSD - overlay visual com ondas animadas conforme o nível de voz.
+
+Monitora o state file do voxtype (/run/user/<uid>/voxtype/state) e o socket
+de nível de áudio (/run/user/<uid>/voxtype/audio.sock) para exibir:
+  - Microfone + ondas animadas enquanto grava (crescem com a voz)
+  - "Transcrevendo..." com spinner enquanto transcreve
+  - Sem overlay quando idle
+"""
+import json
+import os
+import socket
+import struct
+import sys
+import threading
+import time
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import Gtk, GLib, Gdk, Pango
+import cairo
+
+RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+STATE_FILE = os.path.join(RUNTIME_DIR, "voxtype", "state")
+AUDIO_SOCK = os.path.join(RUNTIME_DIR, "voxtype", "audio.sock")
+
+COLORS = {
+    "idle": (0.4, 0.4, 0.4, 1.0),
+    "recording": (0.95, 0.29, 0.29, 1.0),   # vermelho
+    "transcribing": (0.30, 0.70, 0.95, 1.0), # azul
+}
+
+MAX_BARS = 11
+BAR_BASE_HEIGHT = 8
+BAR_MAX_HEIGHT = 46
+
+
+class VoxtypeOSD(Gtk.Window):
+    def __init__(self):
+        super().__init__(type=Gtk.WindowType.POPUP)
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_app_paintable(True)
+        self.set_accept_focus(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_default_size(220, 90)
+
+        self.state = "idle"
+        self.level = 0.0
+        self.bars = [0.0] * MAX_BARS
+        self.levels_deque = []
+
+        # Constrói UI
+        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.box.set_margin_top(14)
+        self.box.set_margin_bottom(10)
+        self.box.set_margin_left(16)
+        self.box.set_margin_right(16)
+        self.add(self.box)
+
+        # Ícone de microfone
+        self.mic_label = Gtk.Label(label="🎙")
+        mic_attrs = Pango.AttrList()
+        font = Pango.FontDescription()
+        font.set_family("Noto Color Emoji")
+        font.set_size(34 * Pango.SCALE)
+        mic_attrs.insert(Pango.attr_font_desc_new(font))
+        self.mic_label.set_attributes(mic_attrs)
+        self.mic_label.set_halign(Gtk.Align.CENTER)
+        self.box.pack_start(self.mic_label, False, False, 0)
+
+        # Rótulo de estado
+        self.state_label = Gtk.Label(label="Ouvindo...")
+        self.state_label.set_halign(Gtk.Align.CENTER)
+        self.state_label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(*COLORS["recording"]))
+        self.box.pack_start(self.state_label, False, False, 0)
+
+        # Área de ondas
+        self.bar_area = Gtk.DrawingArea()
+        self.bar_area.set_size_request(180, BAR_MAX_HEIGHT)
+        self.bar_area.connect("draw", self.on_draw)
+        self.box.pack_start(self.bar_area, False, False, 0)
+
+        # Fundo arredondado escuro (via CSS)
+        css = b"""
+        window { background-color: rgba(15, 17, 26, 0.88); border-radius: 16px; }
+        label { font-family: 'Inter', sans-serif; font-size: 12px; }
+        """
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        self.show_all()
+        self.hide()
+
+        # Threads
+        threading.Thread(target=self.watch_state, daemon=True).start()
+        threading.Thread(target=self.watch_audio, daemon=True).start()
+
+        GLib.timeout_add(33, self.on_tick)  # ~30 fps
+
+    # ---------- Estado ----------
+    def watch_state(self):
+        last = None
+        while True:
+            try:
+                with open(STATE_FILE) as f:
+                    state = f.read().strip()
+                if state != last:
+                    last = state
+                    GLib.idle_add(self.on_state_change, state)
+            except Exception:
+                pass
+            time.sleep(0.2)
+
+    def on_state_change(self, state):
+        self.state = state
+        if state == "recording":
+            self.state_label.set_text("Ouvindo...")
+            self.state_label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(*COLORS["recording"]))
+            self.present()
+        elif state == "transcribing":
+            self.state_label.set_text("Transcrevendo...")
+            self.state_label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(*COLORS["transcribing"]))
+            self.present()
+        elif state == "idle":
+            self.hide()
+        return False
+
+    # ---------- Nível de áudio ----------
+    def watch_audio(self):
+        while True:
+            try:
+                if not os.path.exists(AUDIO_SOCK):
+                    time.sleep(1)
+                    continue
+                s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                s.settimeout(5)
+                s.connect(AUDIO_SOCK)
+                while True:
+                    # tenta ler como float (4 bytes) ou linha json
+                    try:
+                        header = s.recv(4)
+                        if not header:
+                            break
+                        val = struct.unpack("<f", header)[0]
+                        GLib.idle_add(self.on_audio_level, val)
+                    except struct.error:
+                        # pode ser formato json/texto
+                        try:
+                            line = s.recv(64)
+                            if not line:
+                                break
+                            txt = line.decode(errors="ignore").strip()
+                            if txt:
+                                try:
+                                    obj = json.loads(txt)
+                                    val = float(obj.get("level", 0))
+                                except Exception:
+                                    val = min(1.0, len(txt) / 64.0)
+                                GLib.idle_add(self.on_audio_level, val)
+                        except Exception:
+                            break
+                    except socket.timeout:
+                        continue
+            except Exception:
+                time.sleep(1)
+
+    def on_audio_level(self, val):
+        # normaliza 0..1
+        try:
+            lvl = max(0.0, min(1.0, float(val)))
+        except Exception:
+            lvl = 0.0
+        self.levels_deque.append(lvl)
+        if len(self.levels_deque) > 40:
+            self.levels_deque.pop(0)
+        self.level = lvl
+        return False
+
+    # ---------- Animação ----------
+    def on_tick(self):
+        # propaga ondas
+        target = self.level if self.state == "recording" else 0.0
+        self.bars.insert(0, target)
+        self.bars.pop()
+        # suaviza com média
+        if self.levels_deque:
+            self.bars[0] = sum(self.levels_deque) / len(self.levels_deque)
+        self.bar_area.queue_draw()
+        return True
+
+    def on_draw(self, widget, cr):
+        w = widget.get_allocated_width()
+        h = widget.get_allocated_height()
+        n = MAX_BARS
+        bw = min(10, (w - 20) / n)
+        gap = bw * 0.35
+        total_w = n * bw - gap
+        x0 = (w - total_w) / 2
+
+        color = COLORS.get(self.state, COLORS["idle"])
+        cr.set_source_rgba(*color)
+
+        for i, v in enumerate(self.bars):
+            bh = BAR_BASE_HEIGHT + v * (BAR_MAX_HEIGHT - BAR_BASE_HEIGHT)
+            y = (h - bh) / 2
+            x = x0 + i * (bw)
+            cr.rectangle(x, y, bw - gap, bh)
+            cr.fill()
+
+        # borda de gravação (pulso)
+        if self.state == "recording":
+            pulse = 0.5 + 0.5 * abs(self.level)
+            cr.set_source_rgba(0.95, 0.29, 0.29, 0.25 * pulse)
+            cr.set_line_width(3)
+            cr.rectangle(4, 4, w - 8, h - 8)
+            cr.stroke()
+        return True
+
+
+def main():
+    win = VoxtypeOSD()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

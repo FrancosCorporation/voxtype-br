@@ -1,0 +1,39 @@
+# Voxtype Configuration — pt-BR / GPU / ABNT2
+# Location: ~/.config/voxtype/config.toml
+
+# State file for external integrations (Waybar, polybar, etc.)
+state_file = "auto"
+
+[hotkey]
+# Tecla para ditado (com o atalho global do GNOME, o built-in fica desabilitado)
+key = "SPACE"
+modifiers = ["LEFTCTRL", "LEFTSHIFT"]
+mode = "toggle"          # 1ª tecla grava, 2ª para e cola no cursor
+enabled = false          # usa atalho do GNOME (sem precisar logout)
+
+[audio]
+device = "default"
+sample_rate = 16000
+max_duration_secs = 60
+
+[whisper]
+model = "large-v3-turbo" # melhor qualidade pt-BR (multi-idioma)
+language = "pt"          # Português do Brasil
+translate = false
+threads = 8              # ajuda em CPUs sem GPU
+
+[output]
+mode = "type"
+fallback_to_clipboard = true
+driver_order = ["ydotool", "wtype", "dotool", "clipboard"]
+dotool_xkb_layout = "br"  # ABNT2 — corrige caracteres trocados (: no lugar de letras)
+type_delay_ms = 0
+pre_type_delay_ms = 0
+restore_clipboard = false
+restore_clipboard_delay_ms = 200
+
+[output.notification]
+on_recording_start = false
+on_recording_stop = false
+on_transcription = true
+urgency = "normal"
