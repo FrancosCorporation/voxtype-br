@@ -16,7 +16,7 @@ como `;` → `:`, e acentos/`ç` saem errados.
 dotool_xkb_layout = "br"
 ```
 
-Depois reinicie: `pkill -f "voxtype-.* daemon" && VOXTYPE_GPU=1 voxtype daemon`
+Depois reinicie: `bash scripts/voxtype-start`
 
 ---
 
@@ -46,14 +46,19 @@ sudo nohup ydotoold -p /run/user/$UID/.ydotool_socket -o $UID:$UID -P 0666 > /tm
 
 ## 3. Transcrição demora muito (CPU subindo)
 
-**Causa:** o wrapper `/usr/bin/voxtype` escolhe o binário AVX2 (CPU) por padrão.
+**Causa:** no pacote `.deb`, `/usr/bin/voxtype` é um symlink para o binário CPU
+(`voxtype-avx2`/`voxtype-avx512`). A variável `VOXTYPE_GPU=1` **não ativa GPU no
+.deb** — ela só funciona no wrapper do AppImage.
 
-**Fix:** habilitar GPU Vulkan:
+**Fix:** ativar a GPU Vulkan (uma única vez):
 ```bash
-VOXTYPE_GPU=1 voxtype daemon
+sudo voxtype setup gpu --enable
 ```
 
-O log deve mostrar:
+Ou use o `scripts/voxtype-start`, que executa `/usr/lib/voxtype/voxtype-vulkan`
+diretamente (sem sudo).
+
+Confira no log:
 ```
 ggml_vulkan: Found 1 Vulkan devices:
 ggml_vulkan: 0 = AMD Radeon RX 6750 XT (RADV NAVI22) (radv)
@@ -65,6 +70,12 @@ Se aparecer `no GPU found`, seu driver Vulkan não está instalado:
 sudo apt install mesa-vulkan-drivers  # AMD/Intel
 # ou
 sudo apt install nvidia-driver-545    # NVIDIA
+```
+
+Se o binário `voxtype-vulkan` não existir em `/usr/lib/voxtype/`, instale o
+pacote que o inclui ou use o AppImage:
+```bash
+ls -la /usr/lib/voxtype/
 ```
 
 ---
@@ -128,16 +139,30 @@ bash scripts/setup-gnome-shortcut.sh
 
 ---
 
-## 8. O texto cola no lugar errado (não no cursor)
+## 8. O texto cola no lugar errado (não no cursor) / a caixa perde a seleção
 
-**Comportamento atual:** o voxtype injeta na **janela focada no momento da
-transcrição**. Se você clicar em outro lugar após parar de falar, o texto vai
-para lá.
+**Como funciona:** o voxtype injeta na **janela focada no momento da injeção**,
+não na que estava focada quando você começou a gravar. Se a transcrição demora
+(CPU: 60–120 s com `large-v3-turbo`) e você clica em outro lugar no meio do
+caminho, o texto cai lá.
 
-**Dica:** o modo `toggle` mantém o fluxo:
+**O que este repo já faz por você:**
+- OSD no **topo da tela** (nunca cobre a caixa de diálogo) + **click-through**
+  (cliques atravessam) + nunca rouba o foco — a seleção do campo se mantém.
+- `mode = "paste"`: colagem atômica via Ctrl+V (instantânea; o modo `type`
+  tecla por tecla é lento e qualquer clique no meio joga o resto na janela errada).
+- `pre_type_delay_ms = 450`: espera você soltar o Ctrl+Shift e o foco assentar.
+- `driver_order` sem `wtype` (nunca funciona no GNOME; só atrasava e poluía o log).
+- Atalho via `voxtype-toggle`: ignora toques durante a transcrição (em vez de
+  parecer "travado") e tem debounce contra disparo duplo.
+
+**Fluxo correto:**
 1. Clique no campo onde quer digitar
-2. `Ctrl+Shift+Espaço` → grava
-3. `Ctrl+Shift+Espaço` → transcreve e injeta **na mesma janela** (que ainda está focada)
+2. `Ctrl+Shift+Espaço` → grava (OSD vermelho no topo)
+3. `Ctrl+Shift+Espaço` → transcreve (OSD azul) e cola **sem clicar em outro
+   lugar até o OSD sumir**
+4. Se caiu na janela errada: clique na caixa certa e dê `Ctrl+V` — a transcrição
+   continua no clipboard (rede de segurança).
 
 ---
 
@@ -159,6 +184,40 @@ gpu_isolation = false
 [whisper]
 language = "pt"
 ```
+
+---
+
+## 11. Atalho: 2º toque não finaliza / não digita o texto
+
+**Sintoma:** `Ctrl+Shift+Espaço` começa a gravação, mas o 2º toque não para
+nem cola o texto.
+
+**Causas mais comuns:**
+
+1. **Transcrição lenta na CPU** — com `large-v3-turbo` (~1.6 GB) na CPU, a
+   transcrição leva 60-120 s (parece que "não finaliza"). Com GPU leva ~1 s.
+   → Veja a seção 3 (GPU).
+
+2. **Daemon não está rodando** — o comando `voxtype record toggle` exige o
+   daemon vivo (lê `voxtype.lock`). O atalho do GNOME roda sem terminal, então
+   o erro fica invisível. Verifique:
+   ```bash
+   voxtype status              # "not running"?
+   ls -la /run/user/$UID/voxtype/voxtype.lock
+   tail -50 /tmp/voxtype.log   # se o daemon morreu, veja o motivo
+   ```
+
+3. **Estado travado em "transcribing"** — se uma transcrição anterior travou,
+   o toggle manda `SIGUSR1` (start), que é ignorado fora do estado idle, e nada
+   acontece. Resete:
+   ```bash
+   echo idle > /run/user/$UID/voxtype/state
+   bash scripts/voxtype-start   # reinicia o daemon limpo
+   ```
+
+4. **Duas instâncias do daemon** — o `voxtype-start` já mata as antigas pelo
+   lockfile; se você roda o daemon via systemd **e** pelo script ao mesmo tempo,
+   pode haver conflito. Prefira um só método de inicialização.
 
 ---
 

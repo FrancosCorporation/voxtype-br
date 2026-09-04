@@ -4,9 +4,15 @@
 set -e
 
 SHORTCUT_NAME="Voxtype Ditado"
-SHORTCUT_CMD="voxtype record toggle"
 SHORTCUT_BINDING="<Ctrl><Shift>space"
 BASE="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Instala o wrapper (debounce + trava durante transcrição) no PATH do usuário
+mkdir -p "$HOME/.local/bin"
+cp "$SCRIPT_DIR/voxtype-toggle" "$HOME/.local/bin/voxtype-toggle"
+chmod +x "$HOME/.local/bin/voxtype-toggle"
+SHORTCUT_CMD="$HOME/.local/bin/voxtype-toggle"
 
 echo "🎯 Configurando atalho: Ctrl+Shift+Espaço → $SHORTCUT_CMD"
 

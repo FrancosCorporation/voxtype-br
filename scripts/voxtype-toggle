@@ -1,0 +1,68 @@
+#!/bin/bash
+# voxtype-toggle — Wrapper seguro para o atalho global do GNOME.
+# Uso (atalho): voxtype-toggle   # em vez de `voxtype record toggle` puro
+#
+# Resolve 3 problemas do toggle puro:
+#  1. Disparo duplo: o GNOME às vezes entrega o atalho 2x (press + release).
+#     Um debounce de ~1,2s ignora o segundo disparo, que senão iniciaria e
+#     pararia a gravação em seguida (ditado vazio).
+#  2. Toque durante a transcrição: com o toggle puro, apertar o atalho enquanto
+#     o estado é "transcribing" é ignorado pelo daemon — parece que "o 2º toque
+#     não finaliza / travou". Aqui avisamos ("Transcrevendo, aguarde…") e não
+#     enviamos comando que seria ignorado.
+#  3. Comandos explícitos: em vez de um toggle cego, enviamos `record start`
+#     (quando idle) ou `record stop` (quando gravando), conforme o state file.
+set -u
+
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/voxtype"
+STATE_FILE="$RUNTIME_DIR/state"
+DEBOUNCE_FILE="$RUNTIME_DIR/toggle.debounce"
+DEBOUNCE_MS=1200
+
+VOXTYPE_BIN="$(command -v voxtype 2>/dev/null || echo /usr/bin/voxtype)"
+
+notify() {
+    command -v notify-send >/dev/null 2>&1 || return 0
+    notify-send -a Voxtype -u low -t 1500 "Voxtype" "$1" 2>/dev/null || true
+}
+
+now_ms() { date +%s%3N 2>/dev/null || echo $(( $(date +%s) * 1000 )); }
+
+# --- Debounce: ignora disparos colados (duplo-fire do atalho) ---
+now=$(now_ms)
+if [ -f "$DEBOUNCE_FILE" ]; then
+    last=$(cat "$DEBOUNCE_FILE" 2>/dev/null || echo 0)
+    case "$last" in ''|*[!0-9]*) last=0 ;; esac
+    if [ $(( now - last )) -lt "$DEBOUNCE_MS" ]; then
+        exit 0
+    fi
+fi
+mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
+echo "$now" > "$DEBOUNCE_FILE" 2>/dev/null || true
+
+# --- Estado atual do daemon ---
+state=""
+[ -f "$STATE_FILE" ] && state=$(tr -d '[:space:]' < "$STATE_FILE" 2>/dev/null || true)
+
+case "$state" in
+    recording|streaming)
+        # 2º toque legítimo: PARA, transcreve e cola na janela focada.
+        # Não clique em outro lugar até o OSD azul ("Transcrevendo…") sumir.
+        exec "$VOXTYPE_BIN" record stop
+        ;;
+    transcribing)
+        # Transcrição em andamento (na CPU pode levar ~1 min com large-v3-turbo).
+        # O daemon ignoraria um toggle aqui — só avisa e aguarda.
+        notify "Transcrevendo… aguarde o texto aparecer."
+        exit 0
+        ;;
+    idle|stopped|"")
+        # 1º toque: começa a gravar. O foco permanece onde está (o OSD fica no
+        # topo e é click-through) — não precisa reclicar na caixa de diálogo.
+        exec "$VOXTYPE_BIN" record start
+        ;;
+    *)
+        # Estado desconhecido: toggle genérico como último recurso.
+        exec "$VOXTYPE_BIN" record toggle
+        ;;
+esac

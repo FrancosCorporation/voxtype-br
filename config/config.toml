@@ -21,19 +21,40 @@ model = "large-v3-turbo" # melhor qualidade pt-BR (multi-idioma)
 language = "pt"          # Português do Brasil
 translate = false
 threads = 8              # ajuda em CPUs sem GPU
+gpu_isolation = false    # mantém o modelo na memória — evita recarregar
+                         # (~1.6 GB) a cada ditado, o que parecia "demora para renderizar"
 
 [output]
-mode = "type"
+# PASTE em vez de TYPE: copia via wl-copy e dá Ctrl+V automático.
+# - É atômico/instantâneo (type digita tecla por tecla e "demora para injetar"
+#   em textos longos — e qualquer clique no meio joga o resto na janela errada).
+# - Funciona com qualquer layout ABNT2 (sem troca de caracteres), dispensando
+#   a tradução tecla-por-tecla do ydotool.
+mode = "paste"
+paste_keys = "ctrl+v"    # tecla de colar (padrão; "shift+insert" é alternativa)
 fallback_to_clipboard = true
-driver_order = ["ydotool", "wtype", "dotool", "clipboard"]
-dotool_xkb_layout = "br"  # ABNT2 — corrige caracteres trocados (: no lugar de letras)
+# Ordem de drivers: SEM wtype — o GNOME Wayland não implementa o protocolo
+# virtual-keyboard, então tentar wtype só gasta tempo e gera erro no log.
+# (eitype/libei pode ser adicionado na frente se estiver instalado.)
+driver_order = ["dotool", "ydotool", "clipboard"]
+dotool_xkb_layout = "br"  # ABNT2 — vale se voltar a usar mode = "type"
 type_delay_ms = 0
-pre_type_delay_ms = 0
+# Espera antes de injetar: dá tempo de soltar o Ctrl+Shift do atalho e do foco
+# voltar à caixa de diálogo. Com 0, os primeiros caracteres eram digitados com
+# modificadores ainda pressionados (texto corrompido/perdido).
+pre_type_delay_ms = 450
+# Mantém a transcrição no clipboard: se o foco estava na janela errada na hora
+# da colagem, é só clicar na caixa certa e dar Ctrl+V manualmente.
 restore_clipboard = false
-restore_clipboard_delay_ms = 200
+restore_clipboard_delay_ms = 500
 
 [output.notification]
 on_recording_start = false
 on_recording_stop = false
 on_transcription = true
 urgency = "normal"
+
+[osd]
+# Overlay visual (bin/voxtype-osd). O daemon inicia o `voxtype-osd` que estiver
+# no PATH. enabled = true é o padrão do voxtype; mantido aqui por clareza.
+enabled = true

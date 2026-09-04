@@ -61,10 +61,13 @@ Pontos-chave:
 [whisper]
 model = "large-v3-turbo"
 language = "pt"
+gpu_isolation = false   # sem recarregar o modelo a cada ditado
 
 [output]
-driver_order = ["ydotool", "wtype", "dotool", "clipboard"]
-dotool_xkb_layout = "br"
+mode = "paste"          # Ctrl+V atômico: instantâneo e sem erro ABNT2
+paste_keys = "ctrl+v"
+driver_order = ["dotool", "ydotool", "clipboard"]  # sem wtype (GNOME não implementa)
+pre_type_delay_ms = 450 # tempo de soltar Ctrl+Shift e o foco voltar à caixa
 ```
 
 ---
@@ -109,12 +112,16 @@ O OSD mostra:
 bash scripts/setup-gnome-shortcut.sh
 ```
 
-Isso cria um atalho personalizado: **Ctrl+Shift+Espaço → `voxtype record toggle`**
+Isso cria um atalho personalizado: **Ctrl+Shift+Espaço → `voxtype-toggle`**
+(wrapper com debounce + trava durante a transcrição — veja `scripts/voxtype-toggle`)
 
 Modo **toggle**:
-1. Pressiona `Ctrl+Shift+Espaço` → começa a gravar
-2. Fala normalmente
-3. Pressiona de novo → para, transcreve e **cola no cursor**
+1. Clique no campo onde quer digitar
+2. Pressiona `Ctrl+Shift+Espaço` → começa a gravar
+3. Fala normalmente
+4. Pressiona de novo → para, transcreve e **cola no cursor** (não clique em
+   outro lugar até o OSD azul sumir; se cair na janela errada, clique na caixa
+   certa e dê `Ctrl+V` — o texto continua no clipboard)
 
 > 💡 O hotkey embutido do voxtype requer o grupo `input` (evdev), que só ativa
 > após logout. O atalho do GNOME contorna isso — funciona imediatamente.
@@ -123,21 +130,29 @@ Modo **toggle**:
 
 ## 8. Iniciar com GPU
 
+> **Importante:** em instalações via `.deb`, o `/usr/bin/voxtype` é um **symlink**
+> para um binário em `/usr/lib/voxtype/` (avx2/avx512 = CPU, vulkan = GPU).
+> A variável `VOXTYPE_GPU=1` **não ativa GPU no .deb** — ela só funciona no
+> wrapper do AppImage. Para ativar a GPU no .deb use o comando oficial:
+
 ```bash
+# 1. (uma única vez) Ativa GPU permanentemente — troca o symlink para voxtype-vulkan
+sudo voxtype setup gpu --enable
+
+# 2. Inicia com o script (ele executa /usr/lib/voxtype/voxtype-vulkan diretamente)
 bash scripts/voxtype-start
 ```
 
-Ou manualmente:
-```bash
-VOXTYPE_GPU=1 voxtype daemon
-```
+O script `voxtype-start` detecta e usa o binário Vulkan automaticamente, mesmo
+sem rodar o `setup gpu` (não precisa de sudo). Verifique que a GPU foi usada:
 
-Verifique que a GPU foi detectada:
 ```bash
 tail -f /tmp/voxtype.log
 # ggml_vulkan: 0 = AMD Radeon RX 6750 XT (RADV NAVI22) (radv)
 # whisper_init_with_params_no_state: use gpu = 1
 ```
+
+Para voltar para CPU: `sudo voxtype setup gpu --disable`
 
 ---
 
@@ -179,5 +194,5 @@ voxtype record toggle   # para e transcreve
 - [ ] `dotool_xkb_layout = "br"` no config
 - [ ] `ydotoold` rodando + socket acessível
 - [ ] Atalho `Ctrl+Shift+Espaço` configurado no GNOME
-- [ ] `VOXTYPE_GPU=1` → log mostra Vulkan device
+- [ ] `sudo voxtype setup gpu --enable` ou `voxtype-start` → log mostra Vulkan device
 - [ ] `voxtype-osd` no `PATH`

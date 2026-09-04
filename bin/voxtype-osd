@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
-"""Voxtype OSD - overlay visual com ondas animadas conforme o nível de voz.
+"""Voxtype OSD — overlay visual com onda senoidal animada conforme o nível de voz.
 
 Monitora o state file do voxtype (/run/user/<uid>/voxtype/state) e o socket
 de nível de áudio (/run/user/<uid>/voxtype/audio.sock) para exibir:
-  - Microfone + ondas animadas enquanto grava (crescem com a voz)
-  - "Transcrevendo..." com spinner enquanto transcreve
+  - Onda senoidal animada que cresce/ondula conforme o volume da voz
+  - "Ouvindo..." (vermelho) durante gravação
+  - "Transcrevendo..." (azul) durante transcrição
   - Sem overlay quando idle
+
+Importante: a janela NÃO rouba o foco (set_accept_focus=False + sem present),
+para que a injeção caia no aplicativo correto (terminal, editor, etc.).
+Ela também fica no TOPO da tela (nunca cobre a caixa de diálogo) e é
+click-through (cliques atravessam para a janela de baixo), então a seleção
+do campo onde você estava não se perde.
 """
-import json
+import math
 import os
 import socket
 import struct
-import sys
 import threading
 import time
 
@@ -25,68 +31,87 @@ RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 STATE_FILE = os.path.join(RUNTIME_DIR, "voxtype", "state")
 AUDIO_SOCK = os.path.join(RUNTIME_DIR, "voxtype", "audio.sock")
 
+# Cores (R, G, B, A)
 COLORS = {
-    "idle": (0.4, 0.4, 0.4, 1.0),
-    "recording": (0.95, 0.29, 0.29, 1.0),   # vermelho
-    "transcribing": (0.30, 0.70, 0.95, 1.0), # azul
+    "recording": (0.95, 0.30, 0.30, 1.0),     # vermelho
+    "transcribing": (0.30, 0.70, 0.95, 1.0),   # azul
+    "idle": (0.45, 0.45, 0.50, 0.6),
 }
 
-MAX_BARS = 11
-BAR_BASE_HEIGHT = 8
-BAR_MAX_HEIGHT = 46
+WIDTH = 340
+HEIGHT = 120
+AMP_MAX = 34.0        # amplitude máxima da onda (px)
+FREQ = 2.2            # frequência da onda
+SMOOTHING = 0.35      # suavização do nível (0..1)
+AUDIO_PEAK_DECAY = 0.15
+
+# Protocolo do socket de áudio do Voxtype (src/audio/levels.rs):
+# o daemon emite AudioFrame de 16 bytes a ~100 Hz:
+#   seq: u32  (contador, native byte order)
+#   min: f32  (menor amostra, -1.0..1.0)
+#   max: f32  (maior amostra, -1.0..1.0)
+#   peak_dbfs: f32 (pico em dBFS, -120.0 (silêncio) .. ~0.0 (alto))
+FRAME_BYTES = 16
+DBFS_FLOOR = 60.0     # dB abaixo do pico considerado "silêncio" para a onda
 
 
 class VoxtypeOSD(Gtk.Window):
     def __init__(self):
-        super().__init__(type=Gtk.WindowType.POPUP)
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
         self.set_decorated(False)
         self.set_skip_taskbar_hint(True)
         self.set_skip_pager_hint(True)
         self.set_app_paintable(True)
-        self.set_accept_focus(False)
-        self.set_position(Gtk.WindowPosition.CENTER)
-        self.set_default_size(220, 90)
+        self.set_accept_focus(False)      # não rouba o foco
+        self.set_can_focus(False)
+        self.set_resizable(False)
+        self.set_type_hint(Gdk.WindowTypeHint.NOTIFICATION)  # janela OSD (GNOME)
+        self.set_keep_above(True)
+        # Sem posição fixa: present_quiet() ancora no topo via self.move().
+        self.set_default_size(WIDTH, HEIGHT)
+        # Click-through: cliques atravessam o OSD para a janela de baixo,
+        # preservando a seleção da caixa de diálogo (via input shape vazia
+        # aplicada no realize e a cada exibição).
+        self.connect("realize", lambda w: self.make_click_through())
 
         self.state = "idle"
-        self.level = 0.0
-        self.bars = [0.0] * MAX_BARS
-        self.levels_deque = []
+        self.level = 0.0          # nível atual suavizado
+        self.raw_level = 0.0
+        self.phase = 0.0          # fase da onda (para animação contínua)
+        self.time = 0.0
 
-        # Constrói UI
-        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.box.set_margin_top(14)
-        self.box.set_margin_bottom(10)
-        self.box.set_margin_left(16)
-        self.box.set_margin_right(16)
+        # Container principal com padding
+        self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.box.set_margin_top(18)
+        self.box.set_margin_bottom(12)
+        self.box.set_margin_start(18)
+        self.box.set_margin_end(18)
         self.add(self.box)
 
-        # Ícone de microfone
-        self.mic_label = Gtk.Label(label="🎙")
-        mic_attrs = Pango.AttrList()
-        font = Pango.FontDescription()
-        font.set_family("Noto Color Emoji")
-        font.set_size(34 * Pango.SCALE)
-        mic_attrs.insert(Pango.attr_font_desc_new(font))
-        self.mic_label.set_attributes(mic_attrs)
-        self.mic_label.set_halign(Gtk.Align.CENTER)
-        self.box.pack_start(self.mic_label, False, False, 0)
-
-        # Rótulo de estado
-        self.state_label = Gtk.Label(label="Ouvindo...")
+        # Rótulo de estado (com ícone de microfone inline)
+        self.state_label = Gtk.Label(label="🎙  Ouvindo...")
         self.state_label.set_halign(Gtk.Align.CENTER)
-        self.state_label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(*COLORS["recording"]))
+        self.state_label.set_ellipsize(Pango.EllipsizeMode.END)
+        self.state_label.set_max_width_chars(30)
         self.box.pack_start(self.state_label, False, False, 0)
 
-        # Área de ondas
-        self.bar_area = Gtk.DrawingArea()
-        self.bar_area.set_size_request(180, BAR_MAX_HEIGHT)
-        self.bar_area.connect("draw", self.on_draw)
-        self.box.pack_start(self.bar_area, False, False, 0)
+        # Área de desenho da onda senoidal
+        self.wave_area = Gtk.DrawingArea()
+        self.wave_area.set_size_request(WIDTH - 36, 56)
+        self.wave_area.connect("draw", self.on_draw)
+        self.box.pack_start(self.wave_area, False, False, 0)
 
-        # Fundo arredondado escuro (via CSS)
+        # Estilo: fundo escuro arredondado
         css = b"""
-        window { background-color: rgba(15, 17, 26, 0.88); border-radius: 16px; }
-        label { font-family: 'Inter', sans-serif; font-size: 12px; }
+        window {
+            background-color: rgba(12, 14, 22, 0.92);
+            border-radius: 14px;
+        }
+        label {
+            font-family: 'Inter', 'Cantarell', sans-serif;
+            font-size: 13px;
+            color: #e2e2e8;
+        }
         """
         provider = Gtk.CssProvider()
         provider.load_from_data(css)
@@ -97,7 +122,7 @@ class VoxtypeOSD(Gtk.Window):
         self.show_all()
         self.hide()
 
-        # Threads
+        # Threads de monitoramento
         threading.Thread(target=self.watch_state, daemon=True).start()
         threading.Thread(target=self.watch_audio, daemon=True).start()
 
@@ -119,17 +144,61 @@ class VoxtypeOSD(Gtk.Window):
 
     def on_state_change(self, state):
         self.state = state
-        if state == "recording":
-            self.state_label.set_text("Ouvindo...")
-            self.state_label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(*COLORS["recording"]))
-            self.present()
+        if state in ("recording", "streaming"):
+            self.state_label.set_text("🎙  Ouvindo...")
+            self.state_label.set_color(Gdk.RGBA(*COLORS["recording"]))
+            self.present_quiet()
         elif state == "transcribing":
-            self.state_label.set_text("Transcrevendo...")
-            self.state_label.override_color(Gtk.StateFlags.NORMAL, Gdk.RGBA(*COLORS["transcribing"]))
-            self.present()
-        elif state == "idle":
+            self.state_label.set_text("⏳  Transcrevendo...")
+            self.state_label.set_color(Gdk.RGBA(*COLORS["transcribing"]))
+            self.present_quiet()
+        elif state in ("idle", "stopped"):
             self.hide()
         return False
+
+    def make_click_through(self):
+        """Torna o OSD transparente a cliques (input shape vazia).
+
+        Sem isso, o OSD — mesmo sem foco de teclado — intercepta cliques do
+        mouse e a caixa de diálogo perde a seleção ao clicar "nele".
+        Best-effort: se o compositor ignorar, o resto (topo + sem foco)
+        já evita o problema na prática.
+        """
+        try:
+            win = self.get_window()
+            if win is None:
+                return
+            win.input_shape_combine_region(cairo.Region(), 0, 0)
+        except Exception:
+            pass
+
+    def present_quiet(self):
+        """Mostra a janela SEM roubar o foco do aplicativo ativo.
+
+        Janelas NOTIFICATION (tipo OSD) não recebem foco no GNOME Wayland.
+        show_all + keep_above garante visibilidade sem focar.
+        Ancorada no TOPO centralizado: nunca cobre a caixa de diálogo onde
+        o cursor está (o motivo nº 1 da "seleção sumindo" ao dar o atalho).
+        """
+        self.show_all()
+        self.set_keep_above(True)
+        self.stick()
+        try:
+            screen = Gdk.Screen.get_default()
+            if screen is not None:
+                monitor = screen.get_primary_monitor()
+                geo = screen.get_monitor_geometry(monitor)
+                x = geo.x + (geo.width - WIDTH) // 2
+                y = geo.y + 36  # abaixo da top bar do GNOME
+                self.move(x, y)
+        except Exception:
+            pass
+        # Reaplica o click-through após cada show (alguns compositores
+        # resetam a input shape quando a janela é remapeada).
+        try:
+            GLib.idle_add(self.make_click_through)
+        except Exception:
+            pass
 
     # ---------- Nível de áudio ----------
     def watch_audio(self):
@@ -141,85 +210,106 @@ class VoxtypeOSD(Gtk.Window):
                 s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
                 s.settimeout(5)
                 s.connect(AUDIO_SOCK)
+                buf = b""
                 while True:
-                    # tenta ler como float (4 bytes) ou linha json
                     try:
-                        header = s.recv(4)
-                        if not header:
+                        data = s.recv(FRAME_BYTES)
+                        if not data:
                             break
-                        val = struct.unpack("<f", header)[0]
-                        GLib.idle_add(self.on_audio_level, val)
-                    except struct.error:
-                        # pode ser formato json/texto
-                        try:
-                            line = s.recv(64)
-                            if not line:
-                                break
-                            txt = line.decode(errors="ignore").strip()
-                            if txt:
-                                try:
-                                    obj = json.loads(txt)
-                                    val = float(obj.get("level", 0))
-                                except Exception:
-                                    val = min(1.0, len(txt) / 64.0)
-                                GLib.idle_add(self.on_audio_level, val)
-                        except Exception:
-                            break
+                        buf += data
+                        # Consome frames completos de 16 bytes (AudioFrame)
+                        while len(buf) >= FRAME_BYTES:
+                            frame = buf[:FRAME_BYTES]
+                            buf = buf[FRAME_BYTES:]
+                            seq, lo, hi, peak_dbfs = struct.unpack("<Ifff", frame)
+                            GLib.idle_add(self.on_audio_level, peak_dbfs)
                     except socket.timeout:
                         continue
+                    except Exception:
+                        break
             except Exception:
                 time.sleep(1)
 
     def on_audio_level(self, val):
-        # normaliza 0..1
         try:
-            lvl = max(0.0, min(1.0, float(val)))
+            dbfs = float(val)
         except Exception:
-            lvl = 0.0
-        self.levels_deque.append(lvl)
-        if len(self.levels_deque) > 40:
-            self.levels_deque.pop(0)
-        self.level = lvl
+            dbfs = -120.0
+        # peak_dbfs: -inf/-120 (silêncio) .. ~0 (alto) → 0..1
+        if not math.isfinite(dbfs):
+            dbfs = -120.0
+        lvl = (dbfs + DBFS_FLOOR) / DBFS_FLOOR
+        lvl = max(0.0, min(1.0, lvl))
+        self.raw_level = lvl
+        # suavização
+        self.level = self.level + SMOOTHING * (lvl - self.level)
         return False
 
     # ---------- Animação ----------
     def on_tick(self):
-        # propaga ondas
-        target = self.level if self.state == "recording" else 0.0
-        self.bars.insert(0, target)
-        self.bars.pop()
-        # suaviza com média
-        if self.levels_deque:
-            self.bars[0] = sum(self.levels_deque) / len(self.levels_deque)
-        self.bar_area.queue_draw()
+        self.time += 1
+        self.phase += 0.12
+        if self.state in ("recording", "streaming"):
+            # mantém a onda viva mesmo com nível 0 (respiração)
+            self.level += (self.raw_level - self.level) * SMOOTHING
+        elif self.state == "transcribing":
+            # onda com "loading" suave durante transcrição
+            self.level = 0.25 + 0.15 * math.sin(self.time * 0.15)
+        else:
+            self.level *= (1 - AUDIO_PEAK_DECAY)
+        self.wave_area.queue_draw()
         return True
 
+    # ---------- Desenho da onda senoidal ----------
     def on_draw(self, widget, cr):
         w = widget.get_allocated_width()
         h = widget.get_allocated_height()
-        n = MAX_BARS
-        bw = min(10, (w - 20) / n)
-        gap = bw * 0.35
-        total_w = n * bw - gap
-        x0 = (w - total_w) / 2
+        cy = h / 2.0
 
         color = COLORS.get(self.state, COLORS["idle"])
+
+        # Nível efetivo (com mínimo visual durante gravação)
+        amp = self.level * AMP_MAX
+        if self.state in ("recording", "streaming"):
+            amp = max(amp, 4.0)
+
+        # Linha de base (center)
+        cr.set_source_rgba(1, 1, 1, 0.08)
+        cr.set_line_width(1)
+        cr.move_to(0, cy)
+        cr.line_to(w, cy)
+        cr.stroke()
+
+        # Onda senoidal
         cr.set_source_rgba(*color)
+        cr.set_line_width(2.5)
+        cr.set_line_cap(cairo.LINE_CAP_ROUND)
+        cr.set_line_join(cairo.LINE_JOIN_ROUND)
 
-        for i, v in enumerate(self.bars):
-            bh = BAR_BASE_HEIGHT + v * (BAR_MAX_HEIGHT - BAR_BASE_HEIGHT)
-            y = (h - bh) / 2
-            x = x0 + i * (bw)
-            cr.rectangle(x, y, bw - gap, bh)
-            cr.fill()
+        steps = int(w / 2)
+        cr.move_to(0, cy)
+        for i in range(steps + 1):
+            x = i * 2.0
+            t = x / w
+            # envelope: mais alto no centro
+            env = math.sin(math.pi * t)
+            y = cy + math.sin(x * FREQ * 0.08 + self.phase) * amp * env
+            cr.line_to(x, y)
 
-        # borda de gravação (pulso)
-        if self.state == "recording":
-            pulse = 0.5 + 0.5 * abs(self.level)
-            cr.set_source_rgba(0.95, 0.29, 0.29, 0.25 * pulse)
+        # Sombra suave da onda (reflexo)
+        cr.stroke_preserve()
+        cr.set_source_rgba(*color[:-1], color[3] * 0.25)
+        cr.set_line_width(6)
+        cr.stroke()
+
+        # Borda pulsante durante gravação
+        if self.state in ("recording", "streaming"):
+            pulse = 0.35 + 0.3 * abs(math.sin(self.time * 0.2))
+            cr.set_source_rgba(0.95, 0.30, 0.30, pulse)
             cr.set_line_width(3)
             cr.rectangle(4, 4, w - 8, h - 8)
             cr.stroke()
+
         return True
 
 
