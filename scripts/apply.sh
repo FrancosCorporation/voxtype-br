@@ -46,10 +46,25 @@ esac
 # 3) Atalho do GNOME -> wrapper
 bash "$SCRIPT_DIR/setup-gnome-shortcut.sh"
 
-# 4) Reinicia o daemon (só assim ele relê o config.toml)
+# 4) Auto-update no login: a partir daqui você não roda mais nada.
+#    A cada login ele dá git pull e, se houver versão nova minha, reaplica
+#    tudo sozinho (log em /tmp/voxtype-autoupdate.log).
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/voxtype-update.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=Voxtype Autoupdate
+Comment=Sincroniza voxtype-br do GitHub e reaplica no login (sem acao manual)
+Exec=bash $ROOT_DIR/scripts/voxtype-autoupdate.sh $ROOT_DIR
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
+EOF
+ok "auto-update instalado (login aplica novidades sozinho)"
+
+# 5) Reinicia o daemon (só assim ele relê o config.toml)
 bash "$SCRIPT_DIR/voxtype-start"
 
-# 5) Verificação: instalado == repo?
+# 6) Verificação: instalado == repo?
 echo ""
 echo "🔍 Conferindo se o instalado bate com o repo:"
 for pair in "config/config.toml:$HOME/.config/voxtype/config.toml" "bin/voxtype-osd:$HOME/.local/bin/voxtype-osd" "scripts/voxtype-toggle:$HOME/.local/bin/voxtype-toggle"; do

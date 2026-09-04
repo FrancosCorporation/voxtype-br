@@ -93,6 +93,11 @@ bash scripts/voxtype-start
 2. No Ubuntu: `git pull && bash scripts/apply.sh`
 3. Testa o ditado e reporta o resultado (ideal: `tail -20 /tmp/voxtype.log` junto)
 
+> Da 1ª vez que o `apply.sh` roda, ele instala o **auto-update no login**:
+> a partir daí você não roda mais comando nenhum — a cada login ele puxa
+> novidades do GitHub e reaplica sozinho (log em `/tmp/voxtype-autoupdate.log`).
+> O teste passa a ser só: atalho → falar → atalho.
+
 ---
 
 ## ⚙️ Configuração essencial (`config/config.toml`)
