@@ -19,8 +19,9 @@ ok "config.toml instalado em ~/.config/voxtype/"
 
 cp "$ROOT_DIR/bin/voxtype-osd" ~/.local/bin/voxtype-osd
 cp "$ROOT_DIR/scripts/voxtype-toggle" ~/.local/bin/voxtype-toggle
+cp "$ROOT_DIR/scripts/voxtype-type" ~/.local/bin/voxtype-type
 cp "$ROOT_DIR/scripts/notify-send-shim" ~/.local/bin/notify-send
-chmod +x ~/.local/bin/voxtype-osd ~/.local/bin/voxtype-toggle ~/.local/bin/notify-send
+chmod +x ~/.local/bin/voxtype-osd ~/.local/bin/voxtype-toggle ~/.local/bin/voxtype-type ~/.local/bin/notify-send
 
 cp -r "$ROOT_DIR/assets/"* ~/.local/share/voxtype/assets/
 ok "assets instalados em ~/.local/share/voxtype/assets/"

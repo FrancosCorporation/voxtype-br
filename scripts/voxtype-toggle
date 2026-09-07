@@ -104,10 +104,16 @@ state="$(current_state)"
 
 case "$state" in
     recording|streaming)
-        # 2º toque legítimo: PARA, transcreve e cola na janela focada.
-        # Não clique em outro lugar até o OSD azul ("Transcrevendo…") sumir.
+        # 2º toque legítimo: PARA, transcreve e digita na janela focada.
+        # A digitação é feita em 2º plano (voxtype-type) DEPOIS que o estado
+        # volta a idle — o OSD esconde e o foco volta à caixa de texto, então
+        # nenhuma letra é perdida. Não clique em outro lugar até o texto sair.
         kill_stale_clipboard
-        exec "$VOXTYPE_BIN" record stop
+        "$VOXTYPE_BIN" record stop
+        if [ -x "$HOME/.local/bin/voxtype-type" ]; then
+            setsid bash "$HOME/.local/bin/voxtype-type" >/dev/null 2>&1 < /dev/null &
+        fi
+        exit 0
         ;;
     transcribing)
         # Transcrição em andamento (na CPU pode levar ~1 min com large-v3-turbo).

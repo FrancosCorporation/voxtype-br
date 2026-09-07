@@ -1,0 +1,39 @@
+#!/bin/bash
+# voxtype-type — Digita a transcrição depois que o estado volta a idle.
+# Chamado pelo voxtype-toggle (atalho) em segundo plano, após `record stop`.
+#
+# Por que esperar idle: quando a transcrição termina, o OSD esconde e o foco
+# volta à caixa de texto. Digitar nesse momento garante que as teclas caem na
+# caixa certa, sem letras "comidas" (a digitação do daemon competia com o OSD).
+#
+# Lê a transcrição de /tmp/voxtype-transcript.txt (escrito pelo daemon no modo
+# output.mode = "file") e digita com ydotool em layout ABNT2.
+set -u
+
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/voxtype"
+STATE_FILE="$RUNTIME_DIR/state"
+TRANS_FILE="/tmp/voxtype-transcript.txt"
+SETTLE_MS=600
+
+# Aguarda o daemon terminar (estado idle = transcrição gravada e OSD escondido)
+for _ in $(seq 1 150); do
+    st=""
+    [ -f "$STATE_FILE" ] && st=$(tr -d '[:space:]' < "$STATE_FILE" 2>/dev/null || true)
+    [ "$st" = "idle" ] && break
+    sleep 0.2
+done
+
+sleep 0.6  # margem: foco volta, OSD esconde de vez
+
+[ -f "$TRANS_FILE" ] || exit 0
+
+# Só digita se o arquivo é recente (transcrição deste ditado, não de outro)
+age=$(( $(date +%s) - $(stat -c %Y "$TRANS_FILE" 2>/dev/null || echo 0) ))
+[ "$age" -lt 30 ] || exit 0
+
+text="$(cat "$TRANS_FILE" 2>/dev/null || true)"
+[ -n "$text" ] || exit 0
+
+export XKB_DEFAULT_LAYOUT=br
+export XKB_DEFAULT_VARIANT=abnt2
+ydotool type --key-delay 12 "$text" 2>/dev/null || true
