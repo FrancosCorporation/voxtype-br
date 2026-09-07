@@ -14,7 +14,7 @@ enabled = false          # usa atalho do GNOME (sem precisar logout)
 [audio]
 device = "default"
 sample_rate = 16000
-max_duration_secs = 60
+max_duration_secs = 999999  # SEM LIMITE de gravação (o 60s cortava a fala sozinho)
 
 [whisper]
 model = "large-v3-turbo" # melhor equilíbrio pt-BR: qualidade do large-v3 com ~2x mais velocidade (1.6 GB)

@@ -236,7 +236,7 @@ class SettingsPanel(Gtk.Window):
         box.pack_start(self.hotkey, False, False, 0)
 
         # --- Idioma ---
-        lbl2 = Gtk.Label(label="Idioma da transcrição")
+        lbl2 = Gtk.Label(label="Idioma de ENTRADA (o que você fala)")
         lbl2.set_halign(Gtk.Align.START)
         box.pack_start(lbl2, False, False, 0)
         self.lang = Gtk.ComboBoxText()
@@ -247,6 +247,24 @@ class SettingsPanel(Gtk.Window):
             self.lang_idx[code] = i
         self.lang.set_active(self.lang_idx.get(current_lang, 0))
         box.pack_start(self.lang, False, False, 0)
+
+        # --- Tradução de saída ---
+        lbl3 = Gtk.Label(label="Saída (tradução)")
+        lbl3.set_halign(Gtk.Align.START)
+        box.pack_start(lbl3, False, False, 0)
+        trow = Gtk.Box(spacing=10)
+        tlbl = Gtk.Label(label="Traduzir automaticamente para inglês")
+        tlbl.set_halign(Gtk.Align.START)
+        tlbl.set_line_wrap(True)
+        self.translate_switch = Gtk.Switch()
+        self.translate_switch.set_active(read_config_value("whisper", "translate") == "true")
+        self.translate_switch.set_tooltip_text(
+            "ON: o texto sai traduzido para inglês, independente do idioma falado.\n"
+            "Obs.: o Whisper traduz apenas para inglês; outros idiomas de saída "
+            "exigiriam um tradutor externo.")
+        trow.pack_start(tlbl, True, True, 0)
+        trow.pack_start(self.translate_switch, False, False, 0)
+        box.pack_start(trow, False, False, 0)
 
         # --- Modo de inserção ---
         lbl3 = Gtk.Label(label="Inserção do texto")
@@ -292,17 +310,21 @@ class SettingsPanel(Gtk.Window):
                           "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/']",
                           base=GNOME_CUSTOMS)
 
-        # 2) Idioma (reinicia o daemon se mudou)
+        # 2) Idioma + tradução (reinicia o daemon se mudou)
         code = LANGUAGES[self.lang.get_active()][0]
-        old = read_config_value("whisper", "language") or "pt"
-        if code != old:
+        translate = "true" if self.translate_switch.get_active() else "false"
+        old_lang = read_config_value("whisper", "language") or "pt"
+        old_trans = read_config_value("whisper", "translate") or "false"
+        if code != old_lang:
             write_config_value("whisper", "language", code)
+        if translate != old_trans:
+            write_config_value("whisper", "translate", translate)
 
         # 3) Modo de inserção
         write_mode("paste" if self.paste_switch.get_active() else "type")
 
-        # Aplica idioma reiniciando o daemon
-        if code != old:
+        # Aplica idioma/tradução reiniciando o daemon
+        if code != old_lang or translate != old_trans:
             restart_daemon()
 
         self.destroy()
