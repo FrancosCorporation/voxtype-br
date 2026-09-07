@@ -21,8 +21,9 @@ _ns = {"__name__": "voxtype_osd_screenshot"}
 with open(os.path.join(ROOT, "bin", "voxtype-osd")) as f:
     exec(compile(f.read(), "voxtype-osd", "exec"), _ns)
 draw_osd = _ns["draw_osd"]
+OSD_W, OSD_H = _ns["OSD_W"], _ns["OSD_H"]
 
-W, H = 380, 118
+W, H = OSD_W, OSD_H
 OUT = os.path.join(os.path.dirname(__file__), "imgs")
 
 

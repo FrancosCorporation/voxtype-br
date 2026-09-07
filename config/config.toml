@@ -46,9 +46,12 @@ restore_clipboard = false
 restore_clipboard_delay_ms = 500
 
 [output.notification]
+# Notificações nativas desligadas: o pop-up do GNOME pode roubar o foco da
+# caixa de diálogo entre a transcrição e a colagem (o texto colava na janela
+# errada). O feedback visual fica por conta do OSD (onda azul "Transcrevendo...").
 on_recording_start = false
 on_recording_stop = false
-on_transcription = true
+on_transcription = false
 urgency = "normal"
 
 [osd]

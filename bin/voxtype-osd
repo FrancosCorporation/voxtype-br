@@ -36,7 +36,7 @@ RUNTIME_DIR = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 STATE_FILE = os.environ.get("VOXTYPE_STATE_FILE", os.path.join(RUNTIME_DIR, "voxtype", "state"))
 AUDIO_SOCK = os.environ.get("VOXTYPE_AUDIO_SOCK", os.path.join(RUNTIME_DIR, "voxtype", "audio.sock"))
 
-OSD_W, OSD_H = 380, 118
+OSD_W, OSD_H = 400, 120
 FRAME_BYTES = 16
 DBFS_FLOOR = 60.0
 SMOOTHING = 0.32
@@ -61,7 +61,14 @@ def rounded_rect(cr, x, y, w, h, r):
 
 def draw_osd(cr, width, height, state, level, phase, tick):
     """Desenha o overlay completo. Função pura — usada pelo OSD e pelos
-    screenshots do README (docs/generate_screenshots.py)."""
+    screenshots do README (docs/generate_screenshots.py).
+
+    Layout (estilo Gemini/onda clássica):
+      - pílula escura arredondada ocupando a janela toda
+      - speaker à esquerda (arco sonoro cresce com o volume)
+      - onda senoidal dominante à direita, SEMPRE contida na pílula
+      - sem textos: cor identifica o estado (vermelho=gravando, azul=transcrevendo)
+    """
     accent = ACCENT.get(state, (0.45, 0.45, 0.50, 0.6))
     recording = state in ("recording", "streaming")
     transcribing = state == "transcribing"
@@ -72,75 +79,77 @@ def draw_osd(cr, width, height, state, level, phase, tick):
     cr.set_source_rgba(0, 0, 0, 0)
     cr.paint()
 
-    w, h = width, height
-    pad = 8
-    radius = min(22.0, h / 2.0 - pad)
+    lvl = max(0.0, min(1.0, level))
+    w, h = float(width), float(height)
+    cx, cy = w / 2.0, h / 2.0
 
-    # Pílula de fundo
-    cr.translate(pad, pad)
-    cr.set_source_rgba(0.04, 0.05, 0.09, 0.88)
-    rounded_rect(cr, 0, 0, w - 2 * pad, h - 2 * pad, radius)
+    # --- Pílula de fundo (janela inteira) ---
+    radius = min(24.0, h / 2.0)
+    cr.set_source_rgba(0.045, 0.055, 0.10, 0.92)
+    rounded_rect(cr, 0, 0, w, h, radius)
     cr.fill()
 
-    # Borda (pulsante quando transcrevendo)
-    pulse = 0.55 + 0.45 * math.sin(tick * 0.09)
-    border_alpha = pulse if transcribing else 0.5
+    # Borda com a cor do estado (pulsa enquanto transcreve)
+    pulse = 0.45 + 0.55 * math.sin(tick * 0.09)
+    border_alpha = (0.35 + 0.4 * pulse) if transcribing else 0.35
     cr.set_source_rgba(accent[0], accent[1], accent[2], border_alpha)
-    cr.set_line_width(2)
-    rounded_rect(cr, 1, 1, w - 2 * pad - 2, h - 2 * pad - 2, radius - 1)
+    cr.set_line_width(1.5)
+    rounded_rect(cr, 1, 1, w - 2, h - 2, max(1.0, radius - 1))
     cr.stroke()
 
-    # --- Speaker (esquerda, pulsa com o volume) ---
-    lvl = max(0.0, min(1.0, level))
-    sp_x, sp_y = 46.0, 55.0
-    bounce = 1.0 + 0.06 * lvl * math.sin(phase * 2.0)
-    body_w, body_h = 22.0 * bounce, 30.0 * bounce
-    cr.set_source_rgba(0.92, 0.94, 0.97, 0.95)
-    rounded_rect(cr, sp_x - body_w / 2, sp_y - body_h / 2, body_w, body_h, 3.5)
+    # --- Speaker (esquerda) ---
+    sp_y = cy
+    bounce = 1.0 + 0.05 * lvl * math.sin(phase * 2.0)
+    # corpo do alto-falante (pastilha)
+    bx0, bx1 = cx - w * 0.30, cx - w * 0.17
+    bw = (bx1 - bx0) * bounce
+    bh = (h * 0.30) * bounce
+    cr.set_source_rgba(0.93, 0.95, 0.97, 0.96)
+    rounded_rect(cr, bx0 - bw / 2, sp_y - bh / 2, bw, bh, 3)
     cr.fill()
-    cone_x = sp_x + body_w / 2
-    cr.move_to(cone_x, sp_y - body_h / 2)
-    cr.line_to(cone_x + 15 * bounce, sp_y - body_h / 2 - 9 * bounce)
-    cr.line_to(cone_x + 15 * bounce, sp_y + body_h / 2 + 9 * bounce)
-    cr.line_to(cone_x, sp_y + body_h / 2)
+    # cone
+    cone_x0, cone_x1 = bx1 - bw / 2, bx1 - bw / 2 + 15 * bounce
+    cr.move_to(cone_x0, sp_y - bh / 2)
+    cr.line_to(cone_x1, sp_y - bh / 2 - 9 * bounce)
+    cr.line_to(cone_x1, sp_y + bh / 2 + 9 * bounce)
+    cr.line_to(cone_x0, sp_y + bh / 2)
     cr.close_path()
     cr.fill()
-
-    # --- Ondas sonoras (crescem com o volume da voz) ---
-    wave_origin_x = cone_x + 15 * bounce
-    for i, base in enumerate((18.0, 30.0)):
-        r = base + lvl * 12.0
-        alpha = min(0.95, (0.25 + 0.25 * i) + 0.55 * lvl)
+    # ondas sonoras (crescem com a voz)
+    for i, base in enumerate((7.0, 15.0)):
+        r = base + lvl * 9.0
+        alpha = min(0.95, (0.3 + 0.2 * i) + 0.5 * lvl)
         cr.set_source_rgba(accent[0], accent[1], accent[2], alpha)
-        cr.set_line_width(3.4 - i * 0.9)
+        cr.set_line_width(2.8 - i * 0.6)
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
-        cr.arc(wave_origin_x, sp_y, r, -0.62, 0.62)
+        cr.arc(cone_x1, sp_y, r, -0.5, 0.5)
         cr.stroke()
 
-    # --- Onda senoidal clássica (faixa contínua, cresce com a voz) ---
-    wave_y = 84.0
+    # --- Onda senoidal dominante (sempre contida) ---
+    wave_y = cy
     if recording:
-        wave_amp = 5.0 + lvl * 17.0
+        wave_amp = 6.0 + lvl * 22.0          # 6..28 → y 32..88 numa pílula de 120
     elif transcribing:
-        wave_amp = 9.0 + 4.0 * math.sin(tick * 0.1)
+        wave_amp = 16.0 + 5.0 * math.sin(tick * 0.1)
     else:
-        wave_amp = 4.0
-    wave_x0 = 90.0
-    wave_x1 = w - 2 * pad - 24
-    steps = 72
-    # brilho suave atrás da onda
-    cr.set_source_rgba(accent[0], accent[1], accent[2], 0.22)
-    cr.set_line_width(5.0)
+        wave_amp = 5.0
+    wave_x0 = cx + w * 0.05
+    wave_x1 = w - 48                       # não encosta nos cantos arredondados
+    steps = 88
+    freq = 8.0 + 1.5 * lvl                   # onda "enche" um pouco com a voz
+    # brilho suave
+    cr.set_source_rgba(accent[0], accent[1], accent[2], 0.20)
+    cr.set_line_width(7.0)
     cr.set_line_cap(cairo.LINE_CAP_ROUND)
     cr.move_to(wave_x0, wave_y)
     for i in range(steps + 1):
         t = i / steps
         x = wave_x0 + t * (wave_x1 - wave_x0)
         env = math.sin(math.pi * t)
-        y = wave_y + math.sin(t * 9.0 + phase) * wave_amp * env
+        y = wave_y + math.sin(t * freq + phase) * wave_amp * env
         cr.line_to(x, y)
     cr.stroke()
-    # traço principal da onda
+    # traço principal
     cr.set_source_rgba(accent[0], accent[1], accent[2], 0.95)
     cr.set_line_width(4.5)
     cr.move_to(wave_x0, wave_y)
@@ -148,22 +157,9 @@ def draw_osd(cr, width, height, state, level, phase, tick):
         t = i / steps
         x = wave_x0 + t * (wave_x1 - wave_x0)
         env = math.sin(math.pi * t)
-        y = wave_y + math.sin(t * 9.0 + phase) * wave_amp * env
+        y = wave_y + math.sin(t * freq + phase) * wave_amp * env
         cr.line_to(x, y)
     cr.stroke()
-
-    # --- Rótulo (canto superior esquerdo, longe das ondas) ---
-    if recording:
-        label = "Ouvindo..."
-    elif transcribing:
-        label = "Transcrevendo..."
-    else:
-        label = "Voxtype"
-    cr.select_font_face("Sans", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-    cr.set_font_size(13)
-    cr.set_source_rgba(0.93, 0.94, 0.97, 0.95)
-    cr.move_to(16.0, 27.0)
-    cr.show_text(label)
 
     cr.restore()
 
