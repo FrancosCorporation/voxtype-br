@@ -67,12 +67,15 @@ a caixa de diálogo e **não rouba o foco**:
 
 | Arquivo | Função |
 |---|---|
-| `bin/voxtype-osd` | Overlay GTK3 com speaker + onda senoidal animada (lê o socket de áudio do daemon) |
-| `config/config.toml` | Configuração pt-BR: GPU, modelo, colagem atômica, delay de foco |
+| `bin/voxtype-osd` | Overlay GTK3 com speaker + onda senoidal animada (sempre mapeado — não rouba o foco) |
+| `config/config.toml` | Configuração pt-BR: GPU, modelo, saída em arquivo, delay |
 | `scripts/voxtype-start` | Inicia o daemon com o binário Vulkan (GPU) e mata duplicados |
 | `scripts/voxtype-toggle` | Wrapper do atalho: debounce, trava na transcrição, auto-recuperação do daemon |
+| `scripts/voxtype-type` | **Cola a transcrição** (wl-copy + Ctrl+Shift+V por keycodes) depois que o foco assenta |
+| `scripts/voxtype-settings` | Diálogo de configuração (colar instantâneo × digitar) — busque "FrancosVox" no menu |
+| `scripts/voxtype-keys-reset` | Libera teclas injetadas que ficaram presas (anti-tecla-presa) |
 | `scripts/setup-gnome-shortcut.sh` | Registra `Ctrl+Shift+Espaço` no GNOME |
-| `scripts/apply.sh` | Sincroniza o repo → sistema (config, OSD, atalho, autostart) |
+| `scripts/apply.sh` | Sincroniza o repo → sistema (config, OSD, atalho, autostart, menu) |
 | `scripts/voxtype-autoupdate.sh` | Auto-update no login (pull + apply) |
 | `whisper-http-server.js` | API HTTP `/transcribe` (opcional, para integrações) |
 
@@ -150,9 +153,8 @@ language = "pt"
 gpu_isolation = false      # modelo fica na memória (sem recarregar a cada ditado)
 
 [output]
-mode = "paste"             # colagem atômica via Ctrl+V (instantânea, ABNT2 seguro)
-driver_order = ["ydotool", "clipboard"]
-pre_type_delay_ms = 600    # tempo para soltar o atalho e o foco assentar
+mode = "file"              # o daemon grava a transcrição; quem cola é o voxtype-type
+file_path = "/tmp/voxtype-transcript.txt"
 ```
 
 ---
@@ -171,10 +173,12 @@ pre_type_delay_ms = 600    # tempo para soltar o atalho e o foco assentar
 | Sintoma | Causa / Fix |
 |---|---|
 | Atalho não faz nada após reboot | O daemon não subiu — o atalho agora **inicia sozinho** (`voxtype-toggle`); ou rode `bash scripts/voxtype-start` |
-| Colagem demora ~1 min | `wtype` instalado (quebrado no GNOME) → `sudo apt remove wtype` |
-| Texto cola na janela errada | OSD agora é click-through e sem foco; aguarde o OSD azul sumir antes de clicar |
+| Texto não cola na caixa | O ydotool desta versão **não injeta combinações nomeadas** (`key ctrl+shift+v`) — use keycodes brutos (`29:1 42:1 47:1 47:0 42:0 29:0`), já configurado |
+| Texto cai em outra janela | O OSD ficava mapeando/desmapeando (mexia no foco) — agora fica sempre mapeado e transparente no idle |
+| Teclas presas (Ctrl travado) | Injeção interrompida no meio — rode `bash voxtype-keys-reset` para liberar |
+| Texto some na transcrição | O pop-up do GNOME rouba o foco do teclado — notificações desligadas (feedback pelo OSD) |
 | Transcrição lenta (CPU 100%) | Confira que `voxtype-start` está usando o binário Vulkan (`grep -i vulkan /tmp/voxtype.log`) |
-| Caracteres ABNT2 trocados | `mode = "paste"` resolve (nenhuma tecla é digitada) |
+| Caracteres ABNT2 trocados | A colagem via clipboard não digita teclas — acentos saem corretos |
 
 Mais detalhes em [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
