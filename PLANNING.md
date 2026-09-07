@@ -1,4 +1,4 @@
-# 📋 Plano de Trabalho — Voxtype BR
+# 📋 Plano de Trabalho — FrancosVox
 
 > Plano vivo do projeto. Marque os itens conforme forem concluídos.
 

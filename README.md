@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/imgs/voxtype-hero.png" alt="Voxtype BR em ação" width="720"/>
+  <img src="docs/imgs/voxtype-hero.png" alt="FrancosVox em ação" width="720"/>
 </p>
 
-<h1 align="center">Voxtype BR 🇧🇷</h1>
+<h1 align="center">FrancosVox 🇧🇷</h1>
 
 <p align="center">
   <b>Ditado por voz (voice-to-text) em tempo real no Linux</b><br/>
@@ -21,7 +21,7 @@
 
 ## ✨ O que é
 
-**Voxtype BR** transforma o [Voxtype](https://github.com/woheller69/voxtype) em um
+**FrancosVox** transforma o [Voxtype](https://github.com/woheller69/voxtype) em um
 sistema de ditado completo para **Português do Brasil**:
 
 1. Pressione `Ctrl+Shift+Espaço` — aparece o **OSD com speaker + onda senoidal** que se move conforme a sua voz
@@ -36,7 +36,7 @@ sistema de ditado completo para **Português do Brasil**:
 
 ## ✅ O que este projeto resolve
 
-| Problema do Voxtype original | Solução do Voxtype BR |
+| Problema do Voxtype original | Solução do FrancosVox |
 |---|---|
 | Modelo `.en` — transcrição ruim em pt-BR | `large-v3-turbo` + `language = "pt"` (multilíngue) |
 | Transcrição na CPU demora 70s+ | **GPU Vulkan** (AMD/NVIDIA/Intel) — 6,5s de áudio transcritos em **~0,7s** |
@@ -103,7 +103,7 @@ voxtype setup --download --model large-v3-turbo
 ### 2. Este repositório
 
 ```bash
-git clone https://github.com/FrancosCorporation/voxtype-br.git ~/Git/voxtype-br
+git clone https://github.com/FrancosCorporation/FrancosVox.git ~/Git/voxtype-br
 cd ~/Git/voxtype-br
 bash scripts/apply.sh        # instala config, OSD, atalho, autostart e inicia o daemon
 ```

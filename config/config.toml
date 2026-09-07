@@ -67,6 +67,6 @@ enabled = true
 [ui]
 # URL do repositório GitHub (para o menu do ícone na bandeja)
 # Deixe vazio para usar o padrão do Voxtype original
-repo_url = "https://github.com/FrancosCorporation/voxtype-br"
+repo_url = "https://github.com/FrancosCorporation/FrancosVox"
 # Mostrar notificações nativas (libnotify) além do OSD
 notify_enabled = true

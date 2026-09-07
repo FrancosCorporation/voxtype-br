@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0e1526"/>
+      <stop offset="1" stop-color="#1a2440"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f04e4e"/>
+      <stop offset="0.5" stop-color="#4ea8f0"/>
+      <stop offset="1" stop-color="#4ee07e"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Fundo: pílula arredondada -->
+  <rect x="16" y="16" width="480" height="480" rx="120" fill="url(#bg)"/>
+
+  <!-- Microfone -->
+  <g fill="#f2f4f8">
+    <!-- corpo -->
+    <rect x="216" y="140" width="80" height="140" rx="40"/>
+    <!-- suporte -->
+    <rect x="190" y="300" width="132" height="28" rx="14"/>
+    <rect x="236" y="328" width="40" height="52" rx="10"/>
+    <!-- base -->
+    <rect x="206" y="380" width="100" height="24" rx="12"/>
+  </g>
+
+  <!-- Onda senoidal (estilo Gemini/Audacity) -->
+  <path d="M 40 420
+           C 70 340, 90 500, 120 420
+           C 150 340, 170 500, 200 420
+           C 230 340, 250 500, 280 420
+           C 310 340, 330 500, 360 420
+           C 390 340, 410 500, 440 420
+           C 455 390, 465 450, 472 420"
+        fill="none" stroke="url(#wave)" stroke-width="22"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,16 @@
+#!/bin/bash
+# voxtype-keys-reset — LIBERA TODAS as teclas injetadas (anti-tecla-presa).
+#
+# REGRA: nunca injete teclas e deixe-as pressionadas. Se uma injeção for
+# interrompida (kill/timeout), as teclas ficam presas — travando o teclado.
+# Rode isto SEMPRE que algo parecer preso:
+#     bash voxtype-keys-reset
+#
+# Usa o binário REAL (/usr/bin/ydotool) direto, em UM comando atômico —
+# sem passar pelo wrapper (~/.local/bin/ydotool) que insere 180ms por tecla.
+set -u
+
+# Teclas que podem ficar presas (modifiers + principais) — envia UP (0)
+KEYS="29:0 42:0 54:0 56:0 100:0 97:0 125:0 126:0 47:0 57:0 30:0 31:0 32:0 33:0 34:0 35:0 36:0 37:0 38:0 39:0 40:0 41:0 43:0 44:0 45:0 46:0 48:0 49:0 50:0 51:0 52:0"
+
+/usr/bin/ydotool key $KEYS 2>/dev/null || true

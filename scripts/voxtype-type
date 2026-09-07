@@ -1,19 +1,30 @@
 #!/bin/bash
-# voxtype-type — Digita a transcrição depois que o estado volta a idle.
+# voxtype-type — Cola a transcrição depois que o estado volta a idle.
 # Chamado pelo voxtype-toggle (atalho) em segundo plano, após `record stop`.
 #
 # Por que esperar idle: quando a transcrição termina, o OSD esconde e o foco
-# volta à caixa de texto. Digitar nesse momento garante que as teclas caem na
-# caixa certa, sem letras "comidas" (a digitação do daemon competia com o OSD).
+# volta à caixa de texto. Colar nesse momento garante que o texto cai na caixa
+# certa, sem letras "comidas".
 #
-# Lê a transcrição de /tmp/voxtype-transcript.txt (escrito pelo daemon no modo
-# output.mode = "file") e digita com ydotool em layout ABNT2.
+# Como cola (em vez de digitar — o usuário não vê a digitação):
+#   1. Copia a transcrição para o clipboard (wl-copy)
+#   2. VERIFICA com wl-paste que o texto está lá (retenta se falhar)
+#   3. Injeta Ctrl+Shift+V — cola em QUALQUER terminal (Ptyxis/gnome-terminal)
+#      e em apps GUI. (Ctrl+V puro não cola em terminais.)
+#   4. Sempre libera as teclas no final (voxtype-keys-reset) — tecla presa
+#      travaria o teclado do usuário.
+# Se o wl-copy falhar, cai no ydotool type como plano B.
 set -u
+
+LOG=/tmp/voxtype-type.log
+exec >> "$LOG" 2>&1
+echo "=== $(date '+%T') voxtype-type iniciado ==="
+echo "WAYLAND_DISPLAY=$WAYLAND_DISPLAY DISPLAY=$DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
 
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/voxtype"
 STATE_FILE="$RUNTIME_DIR/state"
 TRANS_FILE="/tmp/voxtype-transcript.txt"
-SETTLE_MS=600
+KEYS_RESET="$HOME/.local/bin/voxtype-keys-reset"
 
 # Aguarda o daemon terminar (estado idle = transcrição gravada e OSD escondido)
 for _ in $(seq 1 150); do
@@ -22,18 +33,62 @@ for _ in $(seq 1 150); do
     [ "$st" = "idle" ] && break
     sleep 0.2
 done
+echo "estado final: ${st:-desconhecido}"
 
-sleep 0.6  # margem: foco volta, OSD esconde de vez
+sleep 0.8  # margem: foco volta, OSD esconde de vez
 
-[ -f "$TRANS_FILE" ] || exit 0
+if [ ! -f "$TRANS_FILE" ]; then
+    echo "ERRO: sem arquivo de transcrição"
+    [ -x "$KEYS_RESET" ] && bash "$KEYS_RESET"
+    exit 1
+fi
 
-# Só digita se o arquivo é recente (transcrição deste ditado, não de outro)
+# Só cola se o arquivo é recente (transcrição deste ditado, não de outro)
 age=$(( $(date +%s) - $(stat -c %Y "$TRANS_FILE" 2>/dev/null || echo 0) ))
-[ "$age" -lt 30 ] || exit 0
+echo "idade do arquivo: ${age}s"
+if [ "$age" -ge 30 ]; then
+    echo "arquivo antigo, ignorando"
+    [ -x "$KEYS_RESET" ] && bash "$KEYS_RESET"
+    exit 0
+fi
 
 text="$(cat "$TRANS_FILE" 2>/dev/null || true)"
-[ -n "$text" ] || exit 0
+echo "texto: [$text]"
+if [ -z "$text" ]; then
+    echo "texto vazio, ignorando"
+    [ -x "$KEYS_RESET" ] && bash "$KEYS_RESET"
+    exit 0
+fi
 
 export XKB_DEFAULT_LAYOUT=br
 export XKB_DEFAULT_VARIANT=abnt2
-ydotool type --key-delay 12 "$text" 2>/dev/null || true
+
+# 1) Copia para o clipboard (com retry + verificação)
+ok=0
+for try in 1 2 3; do
+    printf '%s' "$text" | wl-copy 2>/dev/null || continue
+    sleep 0.4
+    got="$(timeout 3 wl-paste 2>/dev/null || true)"
+    if [ "$got" = "$text" ]; then
+        ok=1
+        break
+    fi
+    echo "verificação falhou (tentativa $try): [$got]"
+done
+
+if [ "$ok" = 1 ]; then
+    sleep 0.3  # clipboard assentado no compositor
+    # /usr/bin/ydotool DIRETO: o wrapper ~/.local/bin/ydotool estraga
+    # combinações nomeadas (key ctrl+shift+v) e insere 180ms por tecla.
+    /usr/bin/ydotool key ctrl+shift+v 2>/dev/null || true
+    echo "paste enviado (Ctrl+Shift+V)"
+else
+    # Plano B: digitação visível
+    echo "wl-copy falhou — plano B: digitação"
+    /usr/bin/ydotool type --key-delay 25 "$text" 2>/dev/null || true
+fi
+
+# 2) SEMPRE libera as teclas (tecla presa = teclado travado do usuário)
+sleep 0.2
+[ -x "$KEYS_RESET" ] && bash "$KEYS_RESET"
+echo "=== fim ==="
