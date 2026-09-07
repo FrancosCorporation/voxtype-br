@@ -19,7 +19,8 @@ ok "config.toml instalado em ~/.config/voxtype/"
 
 cp "$ROOT_DIR/bin/voxtype-osd" ~/.local/bin/voxtype-osd
 cp "$ROOT_DIR/scripts/voxtype-toggle" ~/.local/bin/voxtype-toggle
-chmod +x ~/.local/bin/voxtype-osd ~/.local/bin/voxtype-toggle
+cp "$ROOT_DIR/scripts/notify-send-shim" ~/.local/bin/notify-send
+chmod +x ~/.local/bin/voxtype-osd ~/.local/bin/voxtype-toggle ~/.local/bin/notify-send
 
 cp -r "$ROOT_DIR/assets/"* ~/.local/share/voxtype/assets/
 ok "assets instalados em ~/.local/share/voxtype/assets/"
@@ -27,6 +28,7 @@ ok "assets instalados em ~/.local/share/voxtype/assets/"
 mkdir -p ~/.local/share/voxtype
 echo "$ROOT_DIR" > ~/.local/share/voxtype/repo_path
 ok "caminho do repo registrado (auto-recuperação do atalho)"
+ok "shim notify-send instalado (pop-up curto, sem roubar o foco)"
 
 ok "voxtype-osd + voxtype-toggle instalados em ~/.local/bin/"
 

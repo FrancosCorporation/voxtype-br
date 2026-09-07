@@ -20,6 +20,10 @@ if [ -x "$HOME/.local/bin/voxtype-osd" ] && ! command -v voxtype-osd >/dev/null 
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
+# Layout ABNT2 para o ydotool type (acentos e ç corretos no modo type)
+export XKB_DEFAULT_LAYOUT=br
+export XKB_DEFAULT_VARIANT=abnt2
+
 # Verifica o daemon do ydotool (necessário para injeção no Wayland)
 if ! pgrep -x ydotoold >/dev/null 2>&1; then
     warn "ydotoold não está rodando. Inicie-o primeiro (sudo ydotoold &)" >&2

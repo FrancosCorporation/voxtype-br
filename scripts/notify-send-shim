@@ -1,0 +1,51 @@
+#!/bin/bash
+# notify-send shim — Notificações do Voxtype com vida CURTA (1s).
+#
+# Por que: o pop-up do GNOME rouba o foco do teclado quando aparece. Se a
+# digitação (modo type) acontecer com o pop-up aberto, o texto vai para o vazio.
+# Com vida de 1s, o pop-up fecha antes da digitação (pre_type_delay_ms=1800) e
+# o foco volta automaticamente para a caixa de texto.
+#
+# Instalado em ~/.local/bin/notify-send pelo apply.sh (PATH do daemon).
+# Notificações de OUTROS aplicativos passam intactas.
+set -u
+
+args=("$@")
+voxtype=0
+
+i=0
+while [ $i -lt ${#args[@]} ]; do
+    a="${args[$i]}"
+    case "$a" in
+        --app-name=*oxtype*|--app-name=*Oxtype*)
+            voxtype=1
+            ;;
+        -a|--app-name)
+            if [ $((i + 1)) -lt ${#args[@]} ]; then
+                case "${args[$((i + 1))]}" in
+                    *oxtype*|*Oxtype*) voxtype=1 ;;
+                esac
+            fi
+            ;;
+        --expire-time=*)
+            args[$i]="--expire-time=1000"
+            ;;
+        --expire-time)
+            if [ $((i + 1)) -lt ${#args[@]} ]; then
+                args[$((i + 1))]="1000"
+            fi
+            ;;
+        -t)
+            if [ $((i + 1)) -lt ${#args[@]} ]; then
+                args[$((i + 1))]="1000"
+            fi
+            ;;
+    esac
+    i=$((i + 1))
+done
+
+if [ "$voxtype" = 1 ]; then
+    exec /usr/bin/notify-send "${args[@]}"
+fi
+
+exec /usr/bin/notify-send "$@"

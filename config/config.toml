@@ -25,33 +25,32 @@ gpu_isolation = false    # mantém o modelo na memória — evita recarregar
                          # (~1.6 GB) a cada ditado, o que parecia "demora para renderizar"
 
 [output]
-# PASTE em vez de TYPE: copia via wl-copy e dá Ctrl+V automático.
-# - É atômico/instantâneo (type digita tecla por tecla e "demora para injetar"
-#   em textos longos — e qualquer clique no meio joga o resto na janela errada).
-# - Funciona com qualquer layout ABNT2 (sem troca de caracteres), dispensando
-#   a tradução tecla-por-tecla do ydotool.
-mode = "paste"
-paste_keys = "ctrl+v"    # tecla de colar (padrão; "shift+insert" é alternativa)
+# TYPE em vez de PASTE: digita o texto tecla por tecla via ydotool.
+# - Funciona em QUALQUER app, inclusive TERMINAIS (opencode, etc.) — o
+#   Ctrl+V do modo paste não cola em terminal (insere o caractere literal ^V).
+# - ABNT2 correto graças ao XKB_DEFAULT_LAYOUT=br exportado pelo voxtype-start
+#   e ao dotool_xkb_layout abaixo.
+mode = "type"
+paste_keys = "ctrl+v"    # só vale se voltar ao mode = "paste"
 fallback_to_clipboard = true
 # Ordem de drivers: dotool não está no Ubuntu padrão — usa ydotool + clipboard
 driver_order = ["ydotool", "clipboard"]
-dotool_xkb_layout = "br"  # ABNT2 — vale se voltar a usar mode = "type"
+dotool_xkb_layout = "br"  # ABNT2 (teclado brasileiro)
 type_delay_ms = 0
-# Espera ANTES de injetar: dá tempo de soltar o Ctrl+Shift do atalho e do foco
-# voltar à caixa de diálogo. AUMENTADO para 600ms para garantir foco.
-pre_type_delay_ms = 600
+# Espera ANTES de digitar: (1) soltar o Ctrl+Shift do atalho; (2) a notificação
+# do GNOME (1s via shim notify-send) fechar e devolver o foco à caixa de texto.
+# Sem isso, o pop-up rouba o foco e a digitação vai para o vazio.
+pre_type_delay_ms = 1800
 # Mantém a transcrição no clipboard: se o foco estava na janela errada na hora
 # da colagem, é só clicar na caixa certa e dar Ctrl+V manualmente.
 restore_clipboard = false
 restore_clipboard_delay_ms = 500
 
 [output.notification]
-# Notificações nativas desligadas: o pop-up do GNOME pode roubar o foco da
-# caixa de diálogo entre a transcrição e a colagem (o texto colava na janela
-# errada). O feedback visual fica por conta do OSD (onda azul "Transcrevendo...").
+# Pop-up nativo ativado: feedback de que a transcrição terminou (mostra o texto).
 on_recording_start = false
 on_recording_stop = false
-on_transcription = false
+on_transcription = true
 urgency = "normal"
 
 [osd]
