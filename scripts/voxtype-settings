@@ -1,35 +1,104 @@
 #!/usr/bin/env python3
-"""Voxtype Configurações — diálogo para escolher como inserir a transcrição.
+"""FrancosVox — Painel de Configurações.
 
-Acessível pelo menu do GNOME ("Voxtype") ou direto: voxtype-settings
+Acessível pelo menu do GNOME (busque "FrancosVox") ou direto:
+voxtype-settings
 
-Opções:
-  - Colar instantâneo (Ctrl+Shift+V) — recomendado: atômico, não "come" letras
-  - Digitar visivelmente — tecla por tecla, para quem quer ver a digitação
-
-Salva a escolha em ~/.config/voxtype/output_mode (lido pelo voxtype-type).
+Recursos:
+  - Captura de atalho: clique no campo, aperte as teclas, solte — vira o
+    atalho global do FrancosVox (configura o GNOME em custom0)
+  - Idioma da transcrição (pt, en, es, fr, de, it, auto)
+  - Inserção: Colar instantâneo (Ctrl+V) ON/OFF — OFF digita visivelmente
+  - Aplicar reinicia o daemon quando necessário
 """
 import os
+import re
+import subprocess
 import sys
 
 import gi
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk
+from gi.repository import Gtk, Gdk
 
 CONFIG_DIR = os.path.expanduser("~/.config/voxtype")
+CONFIG_FILE = os.path.join(CONFIG_DIR, "config.toml")
 MODE_FILE = os.path.join(CONFIG_DIR, "output_mode")
+REPO_PATH_FILE = os.path.expanduser("~/.local/share/voxtype/repo_path")
+
+GNOME_CUSTOMS = "org.gnome.settings-daemon.plugins.media-keys"
+GNOME_BASE = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/"
+
+LANGUAGES = [
+    ("pt", "Português (Brasil)"),
+    ("en", "Inglês"),
+    ("es", "Espanhol"),
+    ("fr", "Francês"),
+    ("de", "Alemão"),
+    ("it", "Italiano"),
+    ("auto", "Automático"),
+]
+
+MOD_TO_GNOME = {
+    Gdk.ModifierType.CONTROL_MASK: "Ctrl",
+    Gdk.ModifierType.SHIFT_MASK: "Shift",
+    Gdk.ModifierType.MOD1_MASK: "Alt",
+    Gdk.ModifierType.SUPER_MASK: "Super",
+}
+
+
+def gsettings_get(key, base=GNOME_BASE):
+    try:
+        out = subprocess.run(
+            ["gsettings", "get", base, key], capture_output=True, text=True, timeout=5)
+        return out.stdout.strip().strip("'")
+    except Exception:
+        return None
+
+
+def gsettings_set(key, value, base=GNOME_BASE):
+    subprocess.run(["gsettings", "set", base, key, value], check=False)
+
+
+def read_config_value(section, key):
+    try:
+        with open(CONFIG_FILE) as f:
+            content = f.read()
+        m = re.search(rf"\[{section}\][^\[]*?^{key}\s*=\s*\"([^\"]+)\"",
+                      content, re.M)
+        if m:
+            return m.group(1)
+        m = re.search(rf"^\[{section}\]\s*$", content, re.M)
+        return None if not m else None
+    except OSError:
+        return None
+
+
+def write_config_value(section, key, value):
+    try:
+        with open(CONFIG_FILE) as f:
+            content = f.read()
+    except OSError:
+        return False
+    pattern = rf'(^\[{section}\]\s*\n(?:[^\[]*\n)*?)^({key}\s*=\s*)"[^"]*"'
+    new, n = re.subn(pattern, rf'\1\2"{value}"', content, count=1, flags=re.M)
+    if n == 0:
+        return False
+    try:
+        with open(CONFIG_FILE, "w") as f:
+            f.write(new)
+        return True
+    except OSError:
+        return False
 
 
 def read_mode():
     try:
         with open(MODE_FILE) as f:
             m = f.read().strip()
-        if m in ("paste", "type"):
-            return m
+        return m if m in ("paste", "type") else "paste"
     except OSError:
-        pass
-    return "paste"
+        return "paste"
 
 
 def write_mode(mode):
@@ -38,73 +107,212 @@ def write_mode(mode):
         f.write(mode + "\n")
 
 
-class SettingsDialog:
+def repo_dir():
+    try:
+        with open(REPO_PATH_FILE) as f:
+            return f.read().strip()
+    except OSError:
+        return os.path.expanduser("~/Git/voxtype-br")
+
+
+def restart_daemon():
+    subprocess.Popen(
+        ["bash", os.path.join(repo_dir(), "scripts", "voxtype-start")],
+        start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def keyval_to_gnome(keyval):
+    name = Gdk.keyval_name(keyval)
+    if not name:
+        return None
+    if name == "space":
+        return "space"
+    if name == "Return":
+        return "Return"
+    if name == "Escape":
+        return "Escape"
+    if len(name) == 1 and name.isalnum():
+        return name.lower()
+    if name.startswith("F") and name[1:].isdigit():
+        return name
+    return name
+
+
+class HotkeyCapture(Gtk.Entry):
+    """Campo que captura a combinação de teclas no release."""
+
     def __init__(self):
-        self.mode = read_mode()
+        super().__init__()
+        self.set_editable(False)
+        self.set_can_focus(True)
+        self.set_placeholder_text("Clique e aperte as teclas")
+        self.capturing = False
+        self.pending_mods = 0
+        self.pending_key = None
+        self.connect("button-press-event", self.on_click)
+        self.connect("key-press-event", self.on_key_press)
+        self.connect("key-release-event", self.on_key_release)
+        self.set_current(gsettings_get("binding") or "<Ctrl><Shift>space")
 
-        self.window = Gtk.Window(title="Voxtype — Modo de saída")
-        self.window.set_default_size(420, 200)
-        self.window.set_resizable(False)
-        self.window.set_position(Gtk.WindowPosition.CENTER)
-        self.window.set_border_width(16)
+    def set_current(self, binding):
+        self.set_text(binding or "")
 
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
-        self.window.add(box)
+    def on_click(self, widget, event):
+        self.capturing = True
+        self.pending_mods = 0
+        self.pending_key = None
+        self.set_text("Aperte as teclas...")
+        self.grab_focus()
+        return True
 
-        title = Gtk.Label(label="Como inserir a transcrição no texto?")
-        title.set_halign(Gtk.Align.START)
-        title.get_style_context().add_class("title")
-        box.pack_start(title, False, False, 0)
+    def on_key_press(self, widget, event):
+        if not self.capturing:
+            return False
+        state = event.state
+        keyval = event.keyval
+        # Modificadores: espera por uma tecla não-modificadora
+        if keyval in (Gdk.KEY_Control_L, Gdk.KEY_Control_R,
+                      Gdk.KEY_Shift_L, Gdk.KEY_Shift_R,
+                      Gdk.KEY_Alt_L, Gdk.KEY_Alt_R,
+                      Gdk.KEY_Super_L, Gdk.KEY_Super_R):
+            return True
+        self.pending_mods = state
+        self.pending_key = keyval
+        return True
 
-        self.radio_paste = Gtk.RadioButton(
-            label="⚡ Colar instantâneo (Ctrl+Shift+V)")
-        self.radio_paste.set_halign(Gtk.Align.START)
-        self.radio_paste.set_tooltip_text(
-            "Copia para o clipboard e cola tudo de uma vez. "
-            "Instantâneo e sem perder letras. Funciona em terminais e apps.")
-        box.pack_start(self.radio_paste, False, False, 0)
+    def on_key_release(self, widget, event):
+        if not self.capturing:
+            return False
+        keyval = event.keyval
+        if keyval in (Gdk.KEY_Control_L, Gdk.KEY_Control_R,
+                      Gdk.KEY_Shift_L, Gdk.KEY_Shift_R,
+                      Gdk.KEY_Alt_L, Gdk.KEY_Alt_R,
+                      Gdk.KEY_Super_L, Gdk.KEY_Super_R):
+            # Se não há tecla principal ainda, ignora (modifier-only release)
+            if self.pending_key is None:
+                return True
+        if self.pending_key is None:
+            return True
+        state = event.state
+        mods = []
+        for mask, name in MOD_TO_GNOME.items():
+            if state & mask:
+                mods.append(name)
+        keyname = keyval_to_gnome(self.pending_key)
+        if not keyname:
+            self.set_text("Tecla não suportada — tente outra")
+            self.capturing = False
+            return True
+        if not mods:
+            self.set_text("Use ao menos um modificador (Ctrl/Shift/Alt/Super)")
+            self.capturing = False
+            return True
+        binding = "<" + "><".join(mods) + ">" + keyname
+        self.set_current(binding)
+        self.capturing = False
+        return True
 
-        self.radio_type = Gtk.RadioButton(
-            group=self.radio_paste,
-            label="⌨️ Digitar visivelmente (tecla por tecla)")
-        self.radio_type.set_halign(Gtk.Align.START)
-        self.radio_type.set_tooltip_text(
-            "Digita o texto como se fosse um teclado — você vê a digitação. "
-            "Mais lento em textos longos.")
-        box.pack_start(self.radio_type, False, False, 0)
+    def current_binding(self):
+        txt = self.get_text()
+        return txt if txt and "Aperte" not in txt else None
 
-        if self.mode == "paste":
-            self.radio_paste.set_active(True)
-        else:
-            self.radio_type.set_active(True)
 
+class SettingsPanel(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="FrancosVox — Configurações")
+        self.set_default_size(460, 320)
+        self.set_resizable(False)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_border_width(18)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.add(box)
+
+        # --- Atalho ---
+        lbl = Gtk.Label(label="Atalho global (clique no campo e aperte as teclas)")
+        lbl.set_halign(Gtk.Align.START)
+        box.pack_start(lbl, False, False, 0)
+        self.hotkey = HotkeyCapture()
+        box.pack_start(self.hotkey, False, False, 0)
+
+        # --- Idioma ---
+        lbl2 = Gtk.Label(label="Idioma da transcrição")
+        lbl2.set_halign(Gtk.Align.START)
+        box.pack_start(lbl2, False, False, 0)
+        self.lang = Gtk.ComboBoxText()
+        current_lang = read_config_value("whisper", "language") or "pt"
+        self.lang_idx = {}
+        for i, (code, label) in enumerate(LANGUAGES):
+            self.lang.append_text(f"{label} ({code})")
+            self.lang_idx[code] = i
+        self.lang.set_active(self.lang_idx.get(current_lang, 0))
+        box.pack_start(self.lang, False, False, 0)
+
+        # --- Modo de inserção ---
+        lbl3 = Gtk.Label(label="Inserção do texto")
+        lbl3.set_halign(Gtk.Align.START)
+        box.pack_start(lbl3, False, False, 0)
+        row = Gtk.Box(spacing=10)
+        rowlbl = Gtk.Label(label="Colar instantâneo (Ctrl+V)")
+        rowlbl.set_halign(Gtk.Align.START)
+        self.paste_switch = Gtk.Switch()
+        self.paste_switch.set_active(read_mode() == "paste")
+        self.paste_switch.set_tooltip_text(
+            "ON: copia e cola tudo de uma vez (recomendado).\n"
+            "OFF: digita o texto tecla por tecla (visível).")
+        row.pack_start(rowlbl, True, True, 0)
+        row.pack_start(self.paste_switch, False, False, 0)
+        box.pack_start(row, False, False, 0)
+
+        # --- Botões ---
         btn_box = Gtk.Box(spacing=8)
         btn_box.set_halign(Gtk.Align.END)
         box.pack_end(btn_box, False, False, 0)
 
         btn_cancel = Gtk.Button(label="Cancelar")
-        btn_cancel.connect("clicked", lambda _: self.window.destroy())
+        btn_cancel.connect("clicked", lambda _: self.destroy())
         btn_box.pack_start(btn_cancel, False, False, 0)
 
-        btn_ok = Gtk.Button(label="OK")
+        btn_ok = Gtk.Button(label="Aplicar")
         btn_ok.get_style_context().add_class("suggested-action")
-        btn_ok.connect("clicked", self.on_ok)
+        btn_ok.connect("clicked", self.on_apply)
         btn_box.pack_start(btn_ok, False, False, 0)
 
-        self.window.connect("destroy", Gtk.main_quit)
-        self.window.show_all()
+        self.connect("destroy", Gtk.main_quit)
+        self.show_all()
 
-    def on_ok(self, _):
-        mode = "paste" if self.radio_paste.get_active() else "type"
-        write_mode(mode)
-        self.window.destroy()
+    def on_apply(self, _):
+        # 1) Atalho
+        binding = self.hotkey.current_binding()
+        if binding and binding != gsettings_get("binding"):
+            gsettings_set("name", "FrancosVox Ditado")
+            gsettings_set("command", os.path.expanduser("~/.local/bin/voxtype-toggle"))
+            gsettings_set("binding", binding)
+            gsettings_set("custom-keybindings",
+                          "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/']",
+                          base=GNOME_CUSTOMS)
+
+        # 2) Idioma (reinicia o daemon se mudou)
+        code = LANGUAGES[self.lang.get_active()][0]
+        old = read_config_value("whisper", "language") or "pt"
+        if code != old:
+            write_config_value("whisper", "language", code)
+
+        # 3) Modo de inserção
+        write_mode("paste" if self.paste_switch.get_active() else "type")
+
+        # Aplica idioma reiniciando o daemon
+        if code != old:
+            restart_daemon()
+
+        self.destroy()
 
 
 def main():
     try:
-        SettingsDialog()
+        SettingsPanel()
     except Exception as e:
-        print(f"voxtype-settings: {e}", file=sys.stderr)
+        print(f"francosvox-settings: {e}", file=sys.stderr)
         sys.exit(1)
     Gtk.main()
 
