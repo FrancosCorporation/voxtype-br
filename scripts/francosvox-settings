@@ -2,12 +2,13 @@
 """FrancosVox — Painel de Configurações.
 
 Acessível pelo menu do GNOME (busque "FrancosVox") ou direto:
-voxtype-settings
+francosvox-settings
 
 Recursos:
   - Captura de atalho: clique no campo, aperte as teclas, solte — vira o
     atalho global do FrancosVox (configura o GNOME em custom0)
-  - Idioma da transcrição (pt, en, es, fr, de, it, auto)
+  - Idioma de ENTRADA (o que você fala): pt, en, es, fr, de, it, auto
+  - Idioma de SAÍDA (tradução): pt, en, es, fr, de, it
   - Inserção: Colar instantâneo (Ctrl+V) ON/OFF — OFF digita visivelmente
   - Aplicar reinicia o daemon quando necessário
 """
@@ -24,7 +25,8 @@ from gi.repository import Gtk, Gdk
 CONFIG_DIR = os.path.expanduser("~/.config/voxtype")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.toml")
 MODE_FILE = os.path.join(CONFIG_DIR, "output_mode")
-REPO_PATH_FILE = os.path.expanduser("~/.local/share/voxtype/repo_path")
+REPO_PATH_FILE = os.path.expanduser("~/.local/share/francosvox/repo_path")
+RUNTIME_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"), "voxtype")
 
 GNOME_CUSTOMS = "org.gnome.settings-daemon.plugins.media-keys"
 GNOME_BASE = "org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/"
@@ -37,6 +39,16 @@ LANGUAGES = [
     ("de", "Alemão"),
     ("it", "Italiano"),
     ("auto", "Automático"),
+]
+
+# Saída não tem "Automático": o Whisper precisa do idioma alvo definido.
+OUTPUT_LANGUAGES = [
+    ("pt", "Português (Brasil)"),
+    ("en", "Inglês"),
+    ("es", "Espanhol"),
+    ("fr", "Francês"),
+    ("de", "Alemão"),
+    ("it", "Italiano"),
 ]
 
 MOD_TO_GNOME = {
@@ -61,28 +73,41 @@ def gsettings_set(key, value, base=GNOME_BASE):
 
 
 def read_config_value(section, key):
+    """Lê valor com aspas OU cru (ex.: translate = true é bool, sem aspas)."""
     try:
         with open(CONFIG_FILE) as f:
             content = f.read()
-        m = re.search(rf"\[{section}\][^\[]*?^{key}\s*=\s*\"([^\"]+)\"",
-                      content, re.M)
-        if m:
-            return m.group(1)
-        m = re.search(rf"^\[{section}\]\s*$", content, re.M)
-        return None if not m else None
     except OSError:
         return None
+    m = re.search(rf"\[{section}\][^\[]*?^{key}\s*=\s*\"([^\"]+)\"", content, re.M)
+    if m:
+        return m.group(1)
+    m = re.search(rf"\[{section}\][^\[]*?^{key}\s*=\s*([^\s#]+)", content, re.M)
+    if m:
+        return m.group(1)
+    return None
 
 
-def write_config_value(section, key, value):
+def write_config_value(section, key, value, quoted=True):
+    """Escreve valor com aspas (string) ou cru (bool/número).
+
+    IMPORTANTE: o Voxtype espera bool SEM aspas (translate = true). O painel
+    antigo gravava "true" com aspas, o que podia quebrar o daemon.
+    """
     try:
         with open(CONFIG_FILE) as f:
             content = f.read()
     except OSError:
         return False
-    pattern = rf'(^\[{section}\]\s*\n(?:[^\[]*\n)*?)^({key}\s*=\s*)"[^"]*"'
-    new, n = re.subn(pattern, rf'\1\2"{value}"', content, count=1, flags=re.M)
-    if n == 0:
+    val = f'"{value}"' if quoted else value
+    new = re.sub(
+        rf'(^\[{section}\]\s*\n(?:[^\[]*\n)*?^({key}\s*=\s*))"[^"]*"',
+        rf'\g<1>{val}', content, count=1, flags=re.M)
+    if new == content:
+        new = re.sub(
+            rf'(^\[{section}\]\s*\n(?:[^\[]*\n)*?^({key}\s*=\s*))[^\s#]+',
+            rf'\g<1>{val}', content, count=1, flags=re.M)
+    if new == content:
         return False
     try:
         with open(CONFIG_FILE, "w") as f:
@@ -116,8 +141,15 @@ def repo_dir():
 
 
 def restart_daemon():
+    """Reinicia o daemon e avisa a bandeja (ícone de loading) até ficar pronto."""
+    try:
+        os.makedirs(RUNTIME_DIR, exist_ok=True)
+        with open(os.path.join(RUNTIME_DIR, "restarting"), "w") as f:
+            f.write("1")
+    except OSError:
+        pass
     subprocess.Popen(
-        ["bash", os.path.join(repo_dir(), "scripts", "voxtype-start")],
+        ["bash", os.path.join(repo_dir(), "scripts", "francosvox-start")],
         start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -235,36 +267,45 @@ class SettingsPanel(Gtk.Window):
         self.hotkey = HotkeyCapture()
         box.pack_start(self.hotkey, False, False, 0)
 
-        # --- Idioma ---
+        # --- Idioma de entrada ---
         lbl2 = Gtk.Label(label="Idioma de ENTRADA (o que você fala)")
         lbl2.set_halign(Gtk.Align.START)
         box.pack_start(lbl2, False, False, 0)
         self.lang = Gtk.ComboBoxText()
-        current_lang = read_config_value("whisper", "language") or "pt"
+        current_lang = (read_config_value("whisper", "source_language")
+                        or read_config_value("whisper", "language") or "pt")
         self.lang_idx = {}
         for i, (code, label) in enumerate(LANGUAGES):
             self.lang.append_text(f"{label} ({code})")
             self.lang_idx[code] = i
         self.lang.set_active(self.lang_idx.get(current_lang, 0))
+        self.lang.set_tooltip_text(
+            "Idioma que você fala. 'Automático' deixa o Whisper detectar sozinho.")
         box.pack_start(self.lang, False, False, 0)
 
-        # --- Tradução de saída ---
-        lbl3 = Gtk.Label(label="Saída (tradução)")
+        # --- Idioma de saída (tradução) ---
+        lbl3 = Gtk.Label(label="Idioma de SAÍDA (tradução)")
         lbl3.set_halign(Gtk.Align.START)
         box.pack_start(lbl3, False, False, 0)
-        trow = Gtk.Box(spacing=10)
-        tlbl = Gtk.Label(label="Traduzir automaticamente para inglês")
-        tlbl.set_halign(Gtk.Align.START)
-        tlbl.set_line_wrap(True)
-        self.translate_switch = Gtk.Switch()
-        self.translate_switch.set_active(read_config_value("whisper", "translate") == "true")
-        self.translate_switch.set_tooltip_text(
-            "ON: o texto sai traduzido para inglês, independente do idioma falado.\n"
-            "Obs.: o Whisper traduz apenas para inglês; outros idiomas de saída "
-            "exigiriam um tradutor externo.")
-        trow.pack_start(tlbl, True, True, 0)
-        trow.pack_start(self.translate_switch, False, False, 0)
-        box.pack_start(trow, False, False, 0)
+        self.out_lang = Gtk.ComboBoxText()
+        current_out = (read_config_value("whisper", "target_language")
+                       or read_config_value("whisper", "language") or "pt")
+        self.out_lang_idx = {}
+        for i, (code, label) in enumerate(OUTPUT_LANGUAGES):
+            self.out_lang.append_text(f"{label} ({code})")
+            self.out_lang_idx[code] = i
+        if current_out not in self.out_lang_idx:
+            current_out = "pt"
+        self.out_lang.set_active(self.out_lang_idx[current_out])
+        self.out_lang.set_tooltip_text(
+            "O texto sai traduzido no idioma escolhido, por um tradutor\n"
+            "local (LibreTranslate, offline):\n"
+            "- Inglês: tradução direta pt→en (qualidade real).\n"
+            "- Francês/Alemão/Italiano: via inglês (pt→en→fr, etc.).\n"
+            "- Espanhol: tradução direta pt→es.\n"
+            "- Igual à entrada: sem tradução, transcrição literal.\n"
+            "A tradução acontece na hora de colar (tradutor local em :5000).")
+        box.pack_start(self.out_lang, False, False, 0)
 
         # --- Modo de inserção ---
         lbl3 = Gtk.Label(label="Inserção do texto")
@@ -304,27 +345,38 @@ class SettingsPanel(Gtk.Window):
         binding = self.hotkey.current_binding()
         if binding and binding != gsettings_get("binding"):
             gsettings_set("name", "FrancosVox Ditado")
-            gsettings_set("command", os.path.expanduser("~/.local/bin/voxtype-toggle"))
+            gsettings_set("command", os.path.expanduser("~/.local/bin/francosvox-toggle"))
             gsettings_set("binding", binding)
             gsettings_set("custom-keybindings",
                           "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/']",
                           base=GNOME_CUSTOMS)
 
-        # 2) Idioma + tradução (reinicia o daemon se mudou)
-        code = LANGUAGES[self.lang.get_active()][0]
-        translate = "true" if self.translate_switch.get_active() else "false"
+        # 2) Idioma de entrada + saída
+        src = LANGUAGES[self.lang.get_active()][0]
+        tgt = OUTPUT_LANGUAGES[self.out_lang.get_active()][0]
+        # A ENTRADA define o idioma de transcrição do Whisper (language).
+        # A SAÍDA é traduzida DEPOIS, na hora de colar (francosvox-type), pelo
+        # tradutor local (libretranslate em :5000) — com cadeia via inglês
+        # para fr/de/it. translate=true é IGNORADO por esta versão do Voxtype.
+        lang = src
+        translate = "false"
         old_lang = read_config_value("whisper", "language") or "pt"
         old_trans = read_config_value("whisper", "translate") or "false"
-        if code != old_lang:
-            write_config_value("whisper", "language", code)
+        write_config_value("whisper", "source_language", src)
+        write_config_value("whisper", "target_language", tgt)
+        changed = False
+        if lang != old_lang:
+            write_config_value("whisper", "language", lang)
+            changed = True
         if translate != old_trans:
-            write_config_value("whisper", "translate", translate)
+            write_config_value("whisper", "translate", translate, quoted=False)
+            changed = True
 
         # 3) Modo de inserção
         write_mode("paste" if self.paste_switch.get_active() else "type")
 
         # Aplica idioma/tradução reiniciando o daemon
-        if code != old_lang or translate != old_trans:
+        if changed:
             restart_daemon()
 
         self.destroy()

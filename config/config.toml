@@ -18,20 +18,24 @@ max_duration_secs = 999999  # SEM LIMITE de gravação (o 60s cortava a fala soz
 
 [whisper]
 model = "large-v3-turbo" # melhor equilíbrio pt-BR: qualidade do large-v3 com ~2x mais velocidade (1.6 GB)
-language = "pt"          # Português do Brasil
+source_language = "pt"
+target_language = "pt"
+language = "pt"
+                         # A saída escolhida é traduzida DEPOIS pelo tradutor local.
 translate = false
+                         # binário: true x false dão o mesmo texto) — fica false
 threads = 8              # ajuda em CPUs sem GPU
 gpu_isolation = false    # mantém o modelo na memória — evita recarregar
                          # (~1.6 GB) a cada ditado, o que parecia "demora para renderizar"
 
 [output]
 # FILE em vez de type/paste: o daemon só grava a transcrição em arquivo
-# (/tmp/voxtype-transcript.txt). Quem digita é o voxtype-toggle (atalho),
+# (/tmp/francosvox-transcript.txt). Quem digita é o francosvox-toggle (atalho),
 # DEPOIS que o estado volta a idle — o OSD já sumiu e o foco voltou à caixa.
 # Motivo: o OSD na tela fazia a digitação do daemon ir para o vazio/parcial
 # (teclas "comidas") — com o OSD fora do caminho a digitação cai inteira.
 mode = "file"
-file_path = "/tmp/voxtype-transcript.txt"
+file_path = "/tmp/francosvox-transcript.txt"
 file_mode = "overwrite"
 paste_keys = "ctrl+v"    # só vale se voltar ao mode = "paste"
 fallback_to_clipboard = true
@@ -58,9 +62,9 @@ on_transcription = false
 urgency = "normal"
 
 [osd]
-# Overlay visual na tela (bin/voxtype-osd): speaker + onda senoidal conforme a
-# voz. O daemon inicia o `voxtype-osd` que estiver no PATH. A digitação é feita
-# pelo voxtype-toggle DEPOIS que o estado volta a idle (o OSD já escondeu), então
+# Overlay visual na tela (bin/francosvox-osd): speaker + onda senoidal conforme a
+# voz. O daemon inicia o OSD pelo nome hardcoded `voxtype-osd` (symlink instalado pelo apply.sh). A digitação é feita
+# pelo francosvox-toggle DEPOIS que o estado volta a idle (o OSD já escondeu), então
 # ele não interfere. enabled = true é o padrão do voxtype.
 enabled = true
 

@@ -1,12 +1,12 @@
 #!/bin/bash
-# voxtype-autoupdate.sh — Sincroniza o repo e reaplica sozinho no login.
+# francosvox-autoupdate.sh — Sincroniza o repo e reaplica sozinho no login.
 # Instalado em ~/.config/autostart pelo scripts/apply.sh (uma única vez).
-# Uso: voxtype-autoupdate.sh /caminho/do/repo
+# Uso: francosvox-autoupdate.sh /caminho/do/repo
 # Depois disso, você NUNCA mais roda comando: é só atalho + falar.
 set -u
 
 REPO_DIR="${1:?informe o caminho do repo}"
-LOG=/tmp/voxtype-autoupdate.log
+LOG=/tmp/francosvox-autoupdate.log
 
 {
 echo "=== $(date '+%F %T') ==="

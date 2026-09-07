@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""FrancosVox — indicador de bandeja (top bar, ao lado do Bluetooth).
+
+Mostra o estado do ditado (🎙 idle / 🎤 gravando / ⏳ transcrevendo) com um
+ícone de microfone. Menu:
+  - Configurações…  -> abre o painel FrancosVox
+  - Reiniciar daemon
+  - Sair             -> esconde só o indicador (o daemon continua)
+"""
+import os
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("AyatanaAppIndicator3", "0.1")
+from gi.repository import AyatanaAppIndicator3 as AppIndicator, Gtk, GLib
+
+RUNTIME_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"), "voxtype")
+STATE_FILE = os.path.join(RUNTIME_DIR, "state")
+RESTART_FLAG = os.path.join(RUNTIME_DIR, "restarting")
+LABELS = {"idle": "🎙️", "recording": "🎤", "transcribing": "⏳"}
+ICON_MIC = "audio-input-microphone-symbolic"
+ICON_BUSY = "view-refresh-symbolic"
+
+
+def current_state():
+    try:
+        with open(STATE_FILE) as f:
+            return f.read().strip() or "idle"
+    except OSError:
+        return "idle"
+
+
+def spawn(argv):
+    subprocess.Popen(argv, start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def mark_restarting():
+    try:
+        os.makedirs(RUNTIME_DIR, exist_ok=True)
+        with open(RESTART_FLAG, "w") as f:
+            f.write("1")
+    except OSError:
+        pass
+
+
+def on_menu_settings(_):
+    spawn([os.path.expanduser("~/.local/bin/francosvox-settings")])
+
+
+def on_menu_restart(_):
+    mark_restarting()
+    spawn(["bash", os.path.expanduser("~/.local/bin/francosvox-start")])
+
+
+def on_menu_quit(_):
+    Gtk.main_quit()
+
+
+def build_menu():
+    menu = Gtk.Menu()
+    it = Gtk.MenuItem(label="Configurações…")
+    it.connect("activate", on_menu_settings)
+    menu.append(it)
+    it = Gtk.MenuItem(label="Reiniciar daemon")
+    it.connect("activate", on_menu_restart)
+    menu.append(it)
+    menu.append(Gtk.SeparatorMenuItem())
+    it = Gtk.MenuItem(label="Sair")
+    it.connect("activate", on_menu_quit)
+    menu.append(it)
+    menu.show_all()
+    return menu
+
+
+def main():
+    ind = AppIndicator.Indicator.new(
+        "francosvox", ICON_MIC,
+        AppIndicator.IndicatorCategory.APPLICATION_STATUS)
+    ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+    ind.set_menu(build_menu())
+
+    def update():
+        # Durante o reinício do daemon (painel Aplicar / menu Reiniciar):
+        # ícone de loading + "⟳" até o francosvox-start limpar a flag.
+        if os.path.exists(RESTART_FLAG):
+            ind.set_label("⟳", "francosvox")
+            ind.set_icon(ICON_BUSY)
+            ind.set_title("FrancosVox — reiniciando…")
+        else:
+            st = current_state()
+            ind.set_label(LABELS.get(st, LABELS["idle"]), "francosvox")
+            ind.set_icon(ICON_MIC)
+            ind.set_title("FrancosVox")
+        return True
+
+    GLib.timeout_add_seconds(1, update)
+    update()
+    try:
+        Gtk.main()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as e:
+        print(f"francosvox-tray: {e}", file=sys.stderr)
+        sys.exit(1)

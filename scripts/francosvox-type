@@ -1,6 +1,6 @@
 #!/bin/bash
-# voxtype-type — Cola a transcrição depois que o estado volta a idle.
-# Chamado pelo voxtype-toggle (atalho) em segundo plano, após `record stop`.
+# francosvox-type — Cola a transcrição depois que o estado volta a idle.
+# Chamado pelo francosvox-toggle (atalho) em segundo plano, após `record stop`.
 #
 # Por que esperar idle: quando a transcrição termina, o OSD esconde e o foco
 # volta à caixa de texto. Colar nesse momento garante que o texto cai na caixa
@@ -11,20 +11,51 @@
 #   2. VERIFICA com wl-paste que o texto está lá (retenta se falhar)
 #   3. Injeta Ctrl+Shift+V — cola em QUALQUER terminal (Ptyxis/gnome-terminal)
 #      e em apps GUI. (Ctrl+V puro não cola em terminais.)
-#   4. Sempre libera as teclas no final (voxtype-keys-reset) — tecla presa
+#   4. Sempre libera as teclas no final (francosvox-keys-reset) — tecla presa
 #      travaria o teclado do usuário.
 # Se o wl-copy falhar, cai no ydotool type como plano B.
 set -u
 
-LOG=/tmp/voxtype-type.log
+LOG=/tmp/francosvox-type.log
 exec >> "$LOG" 2>&1
-echo "=== $(date '+%T') voxtype-type iniciado ==="
+echo "=== $(date '+%T') francosvox-type iniciado ==="
 echo "WAYLAND_DISPLAY=$WAYLAND_DISPLAY DISPLAY=$DISPLAY XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
 
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/voxtype"
 STATE_FILE="$RUNTIME_DIR/state"
-TRANS_FILE="/tmp/voxtype-transcript.txt"
-KEYS_RESET="$HOME/.local/bin/voxtype-keys-reset"
+TRANS_FILE="/tmp/francosvox-transcript.txt"
+KEYS_RESET="$HOME/.local/bin/francosvox-keys-reset"
+
+# Traduz via libretranslate local (127.0.0.1:5000). Par direto quando existe;
+# senão cadeia <src> -> en -> <tgt>. Retorna vazio se o servidor não respondeu.
+translate_text() {
+    python3 - "$1" "$2" "$3" <<'PYEOF'
+import json, sys, urllib.request
+text, src, tgt = sys.argv[1], sys.argv[2], sys.argv[3]
+API = "http://127.0.0.1:5000/translate"
+
+def call(q, s, t):
+    req = urllib.request.Request(API, data=json.dumps(
+        {"q": q, "source": s, "target": t, "format": "text"}).encode(),
+        headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return json.load(r).get("translatedText")
+
+def direct(q, s, t):
+    try:
+        return call(q, s, t)
+    except Exception:
+        return None
+
+out = direct(text, src, tgt)
+if not out and src != "en" and tgt != "en":
+    mid = direct(text, src, "en")
+    if mid:
+        out = direct(mid, "en", tgt)
+if out:
+    sys.stdout.write(out)
+PYEOF
+}
 
 # Aguarda o daemon terminar (estado idle = transcrição gravada e OSD escondido)
 for _ in $(seq 1 150); do
@@ -58,6 +89,26 @@ if [ -z "$text" ]; then
     echo "texto vazio, ignorando"
     [ -x "$KEYS_RESET" ] && bash "$KEYS_RESET"
     exit 0
+fi
+
+# --- Tradução de saída (se pedida no painel) ---
+# A transcrição sai no idioma de ENTRADA (language). Se a SAÍDA escolhida é
+# diferente, traduz agora com o tradutor local (libretranslate :5000), antes
+# de colar. Pares diretos (pt_en, pt_es, en_pt, es_pt, en_fr, en_de, en_it)
+# são 1 chamada; os demais (fr/de/it a partir de pt) vão via inglês.
+CONFIG_FILE="$HOME/.config/voxtype/config.toml"
+src_lang="$(grep -oP '^\s*source_language\s*=\s*"?\K[^"\s#]+' "$CONFIG_FILE" 2>/dev/null || echo pt)"
+tgt_lang="$(grep -oP '^\s*target_language\s*=\s*"?\K[^"\s#]+' "$CONFIG_FILE" 2>/dev/null || echo "$src_lang")"
+echo "idiomas: entrada=$src_lang saída=$tgt_lang"
+
+if [ "$tgt_lang" != "$src_lang" ]; then
+    translated="$(translate_text "$text" "$src_lang" "$tgt_lang")"
+    if [ -n "$translated" ]; then
+        text="$translated"
+        echo "traduzido ($src_lang -> $tgt_lang): [$text]"
+    else
+        echo "AVISO: tradutor local indisponível — colando o texto original"
+    fi
 fi
 
 export XKB_DEFAULT_LAYOUT=br

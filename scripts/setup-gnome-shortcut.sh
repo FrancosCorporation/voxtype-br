@@ -3,16 +3,16 @@
 # Funciona no GNOME Wayland (sem precisar logout/login).
 set -e
 
-SHORTCUT_NAME="Voxtype Ditado"
+SHORTCUT_NAME="FrancosVox Ditado"
 SHORTCUT_BINDING="<Ctrl><Shift>space"
 BASE="org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Instala o wrapper (debounce + trava durante transcrição) no PATH do usuário
 mkdir -p "$HOME/.local/bin"
-cp "$SCRIPT_DIR/voxtype-toggle" "$HOME/.local/bin/voxtype-toggle"
-chmod +x "$HOME/.local/bin/voxtype-toggle"
-SHORTCUT_CMD="$HOME/.local/bin/voxtype-toggle"
+cp "$SCRIPT_DIR/francosvox-toggle" "$HOME/.local/bin/francosvox-toggle"
+chmod +x "$HOME/.local/bin/francosvox-toggle"
+SHORTCUT_CMD="$HOME/.local/bin/francosvox-toggle"
 
 echo "🎯 Configurando atalho: Ctrl+Shift+Espaço → $SHORTCUT_CMD"
 

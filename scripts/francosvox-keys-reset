@@ -1,10 +1,10 @@
 #!/bin/bash
-# voxtype-keys-reset — LIBERA TODAS as teclas injetadas (anti-tecla-presa).
+# francosvox-keys-reset — LIBERA TODAS as teclas injetadas (anti-tecla-presa).
 #
 # REGRA: nunca injete teclas e deixe-as pressionadas. Se uma injeção for
 # interrompida (kill/timeout), as teclas ficam presas — travando o teclado.
 # Rode isto SEMPRE que algo parecer preso:
-#     bash voxtype-keys-reset
+#     bash francosvox-keys-reset
 #
 # Usa o binário REAL (/usr/bin/ydotool) direto, em UM comando atômico —
 # sem passar pelo wrapper (~/.local/bin/ydotool) que insere 180ms por tecla.

@@ -30,7 +30,7 @@ sistema de ditado completo para **Português do Brasil**:
 
 | 🎙 Ouvindo (a onda reage à voz) | ⏳ Transcrevendo |
 |---|---|
-| ![Gravando](docs/imgs/voxtype-osd-recording.gif) | ![Transcrevendo](docs/imgs/voxtype-osd-transcribing.png) |
+| ![Gravando](docs/imgs/francosvox-osd-recording.gif) | ![Transcrevendo](docs/imgs/francosvox-osd-transcribing.png) |
 
 ---
 
@@ -45,7 +45,7 @@ sistema de ditado completo para **Português do Brasil**:
 | Texto cola na janela errada | OSD **click-through, sem foco** (`accept_focus=False`), nunca rouba a caixa de diálogo |
 | Teclas ABNT2 saem trocadas (`;` vira `:`) | Colagem **atômica via Ctrl+V** (nenhuma tecla é digitada) |
 | Atalho morto após o reboot | **Autostart do daemon** no login + atalho que **auto-recupera** o daemon |
-| 2º toque ignorado / disparo duplo | Wrapper `voxtype-toggle` com debounce e trava durante a transcrição |
+| 2º toque ignorado / disparo duplo | Wrapper `francosvox-toggle` com debounce e trava durante a transcrição |
 
 ---
 
@@ -67,16 +67,16 @@ a caixa de diálogo e **não rouba o foco**:
 
 | Arquivo | Função |
 |---|---|
-| `bin/voxtype-osd` | Overlay GTK3 com speaker + onda senoidal animada (sempre mapeado — não rouba o foco) |
+| `bin/francosvox-osd` | Overlay GTK3 com speaker + onda senoidal animada (sempre mapeado — não rouba o foco) |
 | `config/config.toml` | Configuração pt-BR: GPU, modelo, saída em arquivo, delay |
-| `scripts/voxtype-start` | Inicia o daemon com o binário Vulkan (GPU) e mata duplicados |
-| `scripts/voxtype-toggle` | Wrapper do atalho: debounce, trava na transcrição, auto-recuperação do daemon |
-| `scripts/voxtype-type` | **Cola a transcrição** (wl-copy + Ctrl+Shift+V por keycodes) depois que o foco assenta |
-| `scripts/voxtype-settings` | Diálogo de configuração (colar instantâneo × digitar) — busque "FrancosVox" no menu |
-| `scripts/voxtype-keys-reset` | Libera teclas injetadas que ficaram presas (anti-tecla-presa) |
+| `scripts/francosvox-start` | Inicia o daemon com o binário Vulkan (GPU) e mata duplicados |
+| `scripts/francosvox-toggle` | Wrapper do atalho: debounce, trava na transcrição, auto-recuperação do daemon |
+| `scripts/francosvox-type` | **Cola a transcrição** (wl-copy + Ctrl+Shift+V por keycodes) depois que o foco assenta |
+| `scripts/francosvox-settings` | Diálogo de configuração (colar instantâneo × digitar) — busque "FrancosVox" no menu |
+| `scripts/francosvox-keys-reset` | Libera teclas injetadas que ficaram presas (anti-tecla-presa) |
 | `scripts/setup-gnome-shortcut.sh` | Registra `Ctrl+Shift+Espaço` no GNOME |
 | `scripts/apply.sh` | Sincroniza o repo → sistema (config, OSD, atalho, autostart, menu) |
-| `scripts/voxtype-autoupdate.sh` | Auto-update no login (pull + apply) |
+| `scripts/francosvox-autoupdate.sh` | Auto-update no login (pull + apply) |
 | `whisper-http-server.js` | API HTTP `/transcribe` (opcional, para integrações) |
 
 ---
@@ -120,7 +120,7 @@ sudo nohup ydotoold -o $USER:$USER -P 0666 > /tmp/ydotoold.log 2>&1 &
 
 ### 4. GPU (opcional, recomendado)
 
-O `scripts/voxtype-start` detecta e usa `/usr/lib/voxtype/voxtype-vulkan`
+O `scripts/francosvox-start` detecta e usa `/usr/lib/voxtype/voxtype-vulkan`
 automaticamente. Confirme no log:
 
 ```
@@ -149,13 +149,22 @@ whisper_init_with_params_no_state: use gpu = 1
 ```toml
 [whisper]
 model = "large-v3-turbo"   # melhor equilíbrio pt-BR: qualidade × velocidade
-language = "pt"
+source_language = "pt"     # idioma de ENTRADA (o que você fala): pt, en, es, fr, de, it, auto
+target_language = "pt"     # idioma de SAÍDA (tradução): pt, en, es, fr, de, it
+language = "pt"            # decode do Whisper = idioma de ENTRADA (escrito pelo painel)
+translate = false          # IGNORADO por esta versão do Voxtype — fica false
 gpu_isolation = false      # modelo fica na memória (sem recarregar a cada ditado)
 
 [output]
-mode = "file"              # o daemon grava a transcrição; quem cola é o voxtype-type
-file_path = "/tmp/voxtype-transcript.txt"
+mode = "file"              # o daemon grava a transcrição; quem cola é o francosvox-type
+file_path = "/tmp/francosvox-transcript.txt"
 ```
+
+> Os dois idiomas (entrada/saída) também são escolhidos pelo painel
+> **FrancosVox** (menu do GNOME). A entrada define a transcrição (Whisper, na
+> GPU); a saída é traduzida na hora de colar por um **tradutor local**
+> (LibreTranslate + modelos Argos, offline em `localhost:5000`) — inglês e
+> espanhol direto, francês/alemão/italiano via inglês (pt→en→fr, etc.).
 
 ---
 
@@ -172,12 +181,12 @@ file_path = "/tmp/voxtype-transcript.txt"
 
 | Sintoma | Causa / Fix |
 |---|---|
-| Atalho não faz nada após reboot | O daemon não subiu — o atalho agora **inicia sozinho** (`voxtype-toggle`); ou rode `bash scripts/voxtype-start` |
+| Atalho não faz nada após reboot | O daemon não subiu — o atalho agora **inicia sozinho** (`francosvox-toggle`); ou rode `bash scripts/francosvox-start` |
 | Texto não cola na caixa | O ydotool desta versão **não injeta combinações nomeadas** (`key ctrl+shift+v`) — use keycodes brutos (`29:1 42:1 47:1 47:0 42:0 29:0`), já configurado |
 | Texto cai em outra janela | O OSD ficava mapeando/desmapeando (mexia no foco) — agora fica sempre mapeado e transparente no idle |
-| Teclas presas (Ctrl travado) | Injeção interrompida no meio — rode `bash voxtype-keys-reset` para liberar |
+| Teclas presas (Ctrl travado) | Injeção interrompida no meio — rode `bash francosvox-keys-reset` para liberar |
 | Texto some na transcrição | O pop-up do GNOME rouba o foco do teclado — notificações desligadas (feedback pelo OSD) |
-| Transcrição lenta (CPU 100%) | Confira que `voxtype-start` está usando o binário Vulkan (`grep -i vulkan /tmp/voxtype.log`) |
+| Transcrição lenta (CPU 100%) | Confira que `francosvox-start` está usando o binário Vulkan (`grep -i vulkan /tmp/francosvox.log`) |
 | Caracteres ABNT2 trocados | A colagem via clipboard não digita teclas — acentos saem corretos |
 
 Mais detalhes em [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
@@ -188,7 +197,7 @@ Mais detalhes em [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ```bash
 git pull && bash scripts/apply.sh   # aplica mudanças do repo no sistema
-tail -f /tmp/voxtype.log            # logs do daemon
+tail -f /tmp/francosvox.log            # logs do daemon
 python3 docs/generate_screenshots.py  # regenera os screenshots do README
 ```
 

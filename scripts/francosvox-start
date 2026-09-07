@@ -1,6 +1,6 @@
 #!/bin/bash
-# voxtype-start — Inicia o daemon do Voxtype com GPU (Vulkan).
-# Uso: ./voxtype-start
+# francosvox-start — Inicia o daemon do Voxtype com GPU (Vulkan).
+# Uso: ./francosvox-start
 set -e
 
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/voxtype"
@@ -16,7 +16,7 @@ ok()    { echo "✅ $*"; }
 warn()  { echo "⚠️  $*"; }
 
 # Garante que o OSD está no PATH
-if [ -x "$HOME/.local/bin/voxtype-osd" ] && ! command -v voxtype-osd >/dev/null 2>&1; then
+if [ -x "$HOME/.local/bin/francosvox-osd" ] && ! command -v francosvox-osd >/dev/null 2>&1; then
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
@@ -59,7 +59,11 @@ stop_daemon() {
     pkill -f "voxtype daemon" 2>/dev/null || true
     sleep 1
     # 3) Mata OSDs duplicados (o daemon novo respawna o OSD automaticamente)
-    pkill -f "voxtype-osd" 2>/dev/null || true
+    pkill -f "francosvox-osd" 2>/dev/null || true
+    # 4) Remove socket de áudio órfão: se o daemon antigo morreu no meio do
+    #    boot, o audio.sock fica meio-morto (listener quebrado) e o OSD nunca
+    #    recebe os níveis de voz — a onda senoidal congela.
+    rm -f "$RUNTIME_DIR/audio.sock"
 }
 
 stop_daemon
@@ -97,7 +101,7 @@ fi
 # CPU/GPU escolhido pelo `voxtype setup gpu`. A variável VOXTYPE_GPU=1 SÓ funciona
 # no wrapper do AppImage — por isso aqui executamos o binário Vulkan diretamente.
 echo "🚀 Iniciando Voxtype com GPU (Vulkan)..."
-setsid nohup env "$DAEMON_BIN" daemon > /tmp/voxtype.log 2>&1 < /dev/null &
+setsid nohup env "$DAEMON_BIN" daemon > /tmp/francosvox.log 2>&1 < /dev/null &
 disown
 
 sleep 5
@@ -111,20 +115,28 @@ fi
 if [ -n "$NEW_PID" ] && kill -0 "$NEW_PID" 2>/dev/null; then
     ok "Voxtype rodando (PID $NEW_PID)"
 else
-    warn "Daemon não confirmado pelo lockfile. Veja /tmp/voxtype.log"
+    warn "Daemon não confirmado pelo lockfile. Veja /tmp/francosvox.log"
 fi
 
 if [ -n "$VULKAN_BIN" ]; then
-    if grep -q "ggml_vulkan\|use gpu = 1\|Found .* Vulkan devices" /tmp/voxtype.log 2>/dev/null; then
+    if grep -q "ggml_vulkan\|use gpu = 1\|Found .* Vulkan devices" /tmp/francosvox.log 2>/dev/null; then
         ok "GPU (Vulkan) em uso! Transcrição rápida."
     else
         warn "Daemon iniciado, mas a GPU ainda não confirmada no log."
         info "O modelo carrega na 1ª gravação — confira após o 1º ditado:"
-        info "    grep -i vulkan /tmp/voxtype.log"
+        info "    grep -i vulkan /tmp/francosvox.log"
     fi
 fi
 
+# Garante o tradutor local (libretranslate :5000) para saídas traduzidas
+if [ -x "$HOME/.local/bin/francosvox-translate-start" ]; then
+    bash "$HOME/.local/bin/francosvox-translate-start"
+fi
+
+# Daemon pronto: avisa a bandeja (sai do modo loading "⟳")
+rm -f "$RUNTIME_DIR/restarting"
+
 echo ""
 echo "   Atalho: Ctrl+Shift+Espaço (1ª = grava, 2ª = cola no cursor)"
-echo "   Log:    tail -f /tmp/voxtype.log"
+echo "   Log:    tail -f /tmp/francosvox.log"
 echo "   Estado: voxtype status"

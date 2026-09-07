@@ -1,0 +1,20 @@
+#!/bin/bash
+# francosvox-translate-start — Garante o tradutor local (libretranslate :5000).
+# Usado no autostart e pelo francosvox-start. Se já estiver de pé, não faz nada.
+set -u
+
+BIN="$HOME/.local/voxtype-translator/bin/libretranslate"
+MODELS="pt_en,pt_es,en_pt,en_fr,es_pt,en_de,en_it"
+
+if [ ! -x "$BIN" ]; then
+    echo "tradutor não instalado (skip)" >&2
+    exit 0
+fi
+
+if curl -s --max-time 2 http://127.0.0.1:5000/health >/dev/null 2>&1; then
+    exit 0
+fi
+
+setsid nohup "$BIN" --load-only "$MODELS" --host 127.0.0.1 --port 5000 \
+    > /tmp/libretranslate.log 2>&1 < /dev/null &
+exit 0
