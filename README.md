@@ -1,147 +1,125 @@
-# Voxtype BR 🇧🇷
+<p align="center">
+  <img src="docs/imgs/voxtype-hero.png" alt="Voxtype BR em ação" width="720"/>
+</p>
 
-**Ditado por voz (voice-to-text) no Linux com suporte total ao Português do Brasil (ABNT2) e aceleração por GPU (Vulkan).**
+<h1 align="center">Voxtype BR 🇧🇷</h1>
 
-Pacote completo de configuração e utilitários para transformar o [Voxtype](https://github.com/woheller69/voxtype) em um sistema de ditado robusto em pt-BR:
+<p align="center">
+  <b>Ditado por voz (voice-to-text) em tempo real no Linux</b><br/>
+  Português do Brasil • GPU (Vulkan) • GNOME Wayland • OSD com onda senoidal animada
+</p>
 
-- ✅ Transcrição com **Whisper large-v3-turbo** (pt-BR)
-- ✅ Aceleração **GPU via Vulkan** (AMD/NVIDIA/Intel)
-- ✅ Injeção de texto no cursor com **ydotool** (funciona no GNOME Wayland)
-- ✅ **OSD visual** com onda senoidal animada conforme o nível de voz
-- ✅ Atalho global `Ctrl+Shift+Espaço` (modo toggle)
-- ✅ Keymap **ABNT2** corrigido (sem letras virarem `:`)
+<p align="center">
+  <a href="LICENSE"><img alt="Licença MIT" src="https://img.shields.io/badge/licença-MIT-blue.svg"/></a>
+  <a href="https://github.com/woheller69/voxtype"><img alt="Baseado no Voxtype" src="https://img.shields.io/badge/base-Voxtype%200.7.1%2B-4a4a4a.svg"/></a>
+  <img alt="Plataforma" src="https://img.shields.io/badge/plataforma-Linux%20(GNOME%20Wayland)-informational.svg"/>
+  <img alt="GPU" src="https://img.shields.io/badge/GPU-Vulkan-8a2be2.svg"/>
+  <img alt="Modelo" src="https://img.shields.io/badge/Whisper-large--v3--turbo-00b4d8.svg"/>
+</p>
 
 ---
 
-## 🎬 OSD Visual (onda senoidal)
+## ✨ O que é
 
-| Ouvindo (gravação) | Transcrevendo |
+**Voxtype BR** transforma o [Voxtype](https://github.com/woheller69/voxtype) em um
+sistema de ditado completo para **Português do Brasil**:
+
+1. Pressione `Ctrl+Shift+Espaço` — aparece o **OSD com speaker + onda senoidal** que se move conforme a sua voz
+2. Fale normalmente
+3. Pressione `Ctrl+Shift+Espaço` de novo — o texto é transcrito **na GPU** e **colado no cursor**, na caixa de diálogo onde você estava
+
+| 🎙 Ouvindo (a onda reage à voz) | ⏳ Transcrevendo |
 |---|---|
-| ![Rec](docs/imgs/voxtype-osd-recording.gif) | ![Trans](docs/imgs/voxtype-osd-transcribing.png) |
-
-O overlay central mostra uma **onda senoidal que ondula conforme o volume da sua voz**:
-- 🎙 **Vermelho + onda animada** — enquanto grava (a onda cresce com a fala)
-- ⏳ **Azul + borda pulsante** — enquanto transcreve
-- Desaparece automaticamente quando idle
-
-> Inspirado na estética de apps como o [whisper-flow](https://github.com/dimastatz/whisper-flow) e Shazam/voice-notes.
+| ![Gravando](docs/imgs/voxtype-osd-recording.gif) | ![Transcrevendo](docs/imgs/voxtype-osd-transcribing.png) |
 
 ---
 
-## 🧩 O Problema
+## ✅ O que este projeto resolve
 
-O Voxtype por padrão:
+| Problema do Voxtype original | Solução do Voxtype BR |
+|---|---|
+| Modelo `.en` — transcrição ruim em pt-BR | `large-v3-turbo` + `language = "pt"` (multilíngue) |
+| Transcrição na CPU demora 70s+ | **GPU Vulkan** (AMD/NVIDIA/Intel) — 6,5s de áudio transcritos em **~0,7s** |
+| `wtype` falha no GNOME Wayland ("virtual keyboard protocol not supported") e **travava a colagem por ~1 minuto** | `wtype` removido; colagem via **ydotool + clipboard** em ~1,5s |
+| Sem feedback visual de gravação | **OSD na tela**: speaker + onda senoidal animada conforme o volume da voz |
+| Texto cola na janela errada | OSD **click-through, sem foco** (`accept_focus=False`), nunca rouba a caixa de diálogo |
+| Teclas ABNT2 saem trocadas (`;` vira `:`) | Colagem **atômica via Ctrl+V** (nenhuma tecla é digitada) |
+| Atalho morto após o reboot | **Autostart do daemon** no login + atalho que **auto-recupera** o daemon |
+| 2º toque ignorado / disparo duplo | Wrapper `voxtype-toggle` com debounce e trava durante a transcrição |
 
-1. Usa modelos `.en` (inglês) — transcrição ruim em pt-BR
-2. Roda na **CPU** (binário AVX2) — transcrições demoram 70s+ com modelo grande
-3. Usa `wtype` para injetar texto — **falha no GNOME Wayland** (protocolo virtual-keyboard não suportado)
-4. Usa keymap **US** — caracteres ABNT2 saem trocados (`;` vira `:`)
-5. Não tem feedback visual de gravação
+---
 
-Este repositório resolve tudo isso.
+## 🖥️ Demonstração
+
+O OSD fica ancorado na **parte inferior central** da tela — pequeno, nunca cobre
+a caixa de diálogo e **não rouba o foco**:
+
+- 🔴 **Ouvindo** — o speaker pulsa e a onda cresce conforme o volume da sua voz
+- 🔵 **Transcrevendo** — borda azul pulsante + onda animada
+- Some automaticamente quando idle
+
+> O overlay usa `Gtk.WindowTypeHint.NOTIFICATION`, `set_accept_focus(False)` e
+> input region vazia (click-through): cliques e foco **atravessam** o OSD.
 
 ---
 
 ## 📦 Componentes
 
-| Arquivo | Descrição |
-|---------|-----------|
-| `bin/voxtype-osd` | OSD visual: microfone + ondas animadas conforme a voz (GTK3, topo da tela, click-through) |
-| `config/config.toml` | Configuração completa pt-BR + GPU + colagem atômica (`paste`) |
-| `scripts/voxtype-start` | Script de inicialização do daemon com GPU (usa `voxtype-vulkan` diretamente) |
-| `scripts/voxtype-toggle` | Wrapper do atalho global (debounce + ignora toques durante a transcrição) |
-| `scripts/voxtype-start` | Script de inicialização do daemon com GPU (usa `voxtype-vulkan` diretamente) |
-| `scripts/setup-gnome-shortcut.sh` | Configura atalho global `Ctrl+Shift+Espaço` no GNOME |
-| `docs/SETUP.md` | Guia completo de instalação |
-| `docs/TROUBLESHOOTING.md` | Solução de problemas comuns |
+| Arquivo | Função |
+|---|---|
+| `bin/voxtype-osd` | Overlay GTK3 com speaker + onda senoidal animada (lê o socket de áudio do daemon) |
+| `config/config.toml` | Configuração pt-BR: GPU, modelo, colagem atômica, delay de foco |
+| `scripts/voxtype-start` | Inicia o daemon com o binário Vulkan (GPU) e mata duplicados |
+| `scripts/voxtype-toggle` | Wrapper do atalho: debounce, trava na transcrição, auto-recuperação do daemon |
+| `scripts/setup-gnome-shortcut.sh` | Registra `Ctrl+Shift+Espaço` no GNOME |
+| `scripts/apply.sh` | Sincroniza o repo → sistema (config, OSD, atalho, autostart) |
+| `scripts/voxtype-autoupdate.sh` | Auto-update no login (pull + apply) |
+| `whisper-http-server.js` | API HTTP `/transcribe` (opcional, para integrações) |
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Instalação
+
+### 1. Voxtype + dependências
 
 ```bash
-# 1. Instala o voxtype (Debian/Ubuntu)
-# dpkg -i voxtype_*.deb
+# Voxtype (0.7.1+)
+wget https://github.com/woheller69/voxtype/releases/latest/download/voxtype_amd64.deb
+sudo dpkg -i voxtype_amd64.deb && sudo apt-get install -f
 
-# 2. Baixa o modelo pt-BR e configura
+# Dependências do sistema
+sudo apt install ydotool wl-clipboard python3-gi python3-gi-cairo gir1.2-gtk-3.0 python3-cairo
+
+# Modelo pt-BR (large-v3-turbo, ~1,6 GB)
 voxtype setup --download --model large-v3-turbo
-
-# 3. Copia a configuração
-mkdir -p ~/.config/voxtype
-cp config/config.toml ~/.config/voxtype/config.toml
-
-# 4. Instala o OSD
-cp bin/voxtype-osd ~/.local/bin/
-chmod +x ~/.local/bin/voxtype-osd
-
-# 5. Configura o atalho no GNOME
-bash scripts/setup-gnome-shortcut.sh
-
-# 6. Inicia o daemon com GPU (usa voxtype-vulkan diretamente)
-bash scripts/voxtype-start
 ```
 
-> ⚠️ **O atalho não lê o repo — lê as cópias instaladas.** Depois de `git pull`
-> ou qualquer edição, rode **`bash scripts/apply.sh`**: ele copia
-> `config.toml` → `~/.config/voxtype/`, `voxtype-osd` + `voxtype-toggle` →
-> `~/.local/bin/`, reaponta o atalho do GNOME e reinicia o daemon (com backup
-> automático do config anterior). No final ele confere se instalado == repo.
+> ⚠️ **Remova o `wtype`** se instalado: ele é incompatível com o GNOME Wayland e
+> fazia a colagem travar por ~1 minuto:
+> ```bash
+> sudo apt remove wtype
+> ```
 
-## 🔁 Ciclo de teste (a cada alteração no código)
+### 2. Este repositório
 
-1. Aqui no repo: edita → commit → push para o `main`
-2. No Ubuntu: `git pull && bash scripts/apply.sh`
-3. Testa o ditado e reporta o resultado (ideal: `tail -20 /tmp/voxtype.log` junto)
-
-> Da 1ª vez que o `apply.sh` roda, ele instala o **auto-update no login**:
-> a partir daí você não roda mais comando nenhum — a cada login ele puxa
-> novidades do GitHub e reaplica sozinho (log em `/tmp/voxtype-autoupdate.log`).
-> O teste passa a ser só: atalho → falar → atalho.
-
----
-
-## ⚙️ Configuração essencial (`config/config.toml`)
-
-```toml
-[hotkey]
-key = "SPACE"
-modifiers = ["LEFTCTRL", "LEFTSHIFT"]
-mode = "toggle"              # 1ª tecla grava, 2ª cola no cursor
-
-[whisper]
-model = "large-v3-turbo"     # melhor qualidade pt-BR
-language = "pt"              # Português
-gpu_isolation = false        # mantém o modelo na RAM (sem recarregar a cada ditado)
-
-[output]
-mode = "paste"               # colagem atômica via Ctrl+V (instantânea, sem erro ABNT2)
-driver_order = ["dotool", "ydotool", "clipboard"]  # sem wtype (não existe no GNOME)
-pre_type_delay_ms = 450      # tempo de soltar o Ctrl+Shift e o foco voltar à caixa
-```
-
----
-
-## 🖥️ GPU (Vulkan)
-
-O Voxtype instala binários separados em `/usr/lib/voxtype/`: `voxtype-avx2`
-(CPU), `voxtype-avx512` (CPU) e `voxtype-vulkan` (GPU). O `/usr/bin/voxtype` é
-um **symlink** para um deles.
-
-> ⚠️ **Importante:** `VOXTYPE_GPU=1` só funciona no wrapper do **AppImage**. Em
-> instalações `.deb`, a GPU é ativada trocando o symlink — não por variável de
-> ambiente.
-
-Para ativar a GPU no `.deb` (uma única vez):
 ```bash
-sudo voxtype setup gpu --enable
+git clone https://github.com/FrancosCorporation/voxtype-br.git ~/Git/voxtype-br
+cd ~/Git/voxtype-br
+bash scripts/apply.sh        # instala config, OSD, atalho, autostart e inicia o daemon
 ```
 
-Ou use o `scripts/voxtype-start`, que executa `/usr/lib/voxtype/voxtype-vulkan`
-diretamente (sem sudo), verificando no log se a GPU foi usada.
+### 3. ydotool (injeção de teclas no Wayland)
 
-O modelo large-v3-turbo (1.6 GB) carrega em ~1s na GPU e transcreve em tempo real.
+```bash
+sudo usermod -aG input $USER   # acesso ao /dev/uinput (logout/login)
+sudo nohup ydotoold -o $USER:$USER -P 0666 > /tmp/ydotoold.log 2>&1 &
+```
 
-Verifique a GPU detectada nos logs:
+### 4. GPU (opcional, recomendado)
+
+O `scripts/voxtype-start` detecta e usa `/usr/lib/voxtype/voxtype-vulkan`
+automaticamente. Confirme no log:
+
 ```
 ggml_vulkan: Found 1 Vulkan devices:
 ggml_vulkan: 0 = AMD Radeon RX 6750 XT (RADV NAVI22) (radv)
@@ -150,73 +128,73 @@ whisper_init_with_params_no_state: use gpu = 1
 
 ---
 
-## ⌨️ Atalho (GNOME Wayland)
+## 🎤 Como usar
 
-O hotkey embutido do voxtype requer o grupo `input` (evdev) que só ativa após logout.
-Para funcionar **sem logout**, use um atalho do GNOME que chama `voxtype record toggle`:
+1. Clique na caixa de texto (chat, e-mail, formulário…)
+2. **`Ctrl+Shift+Espaço`** → OSD vermelho aparece ("Ouvindo...")
+3. Fale naturalmente — o OSD reage à sua voz
+4. **`Ctrl+Shift+Espaço`** → OSD azul ("Transcrevendo...") e o texto é colado no cursor
+5. Se cair na janela errada: clique na caixa certa e dê `Ctrl+V` (o texto continua no clipboard)
 
-```bash
-gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "['/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/']"
-gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ name 'Voxtype Ditado'
-gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ command 'voxtype record toggle'
-gsettings set org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/custom0/ binding '<Ctrl><Shift>space'
+> Durante a transcrição **não clique em outro lugar** — o texto cola na janela
+> focada no momento da colagem.
+
+---
+
+## ⚙️ Configuração essencial
+
+```toml
+[whisper]
+model = "large-v3-turbo"   # melhor equilíbrio pt-BR: qualidade × velocidade
+language = "pt"
+gpu_isolation = false      # modelo fica na memória (sem recarregar a cada ditado)
+
+[output]
+mode = "paste"             # colagem atômica via Ctrl+V (instantânea, ABNT2 seguro)
+driver_order = ["ydotool", "clipboard"]
+pre_type_delay_ms = 600    # tempo para soltar o atalho e o foco assentar
 ```
 
 ---
 
-## 🎙️ OSD Visual
+## 🧩 Requisitos
 
-O `voxtype-osd` exibe um overlay central com **onda senoidal animada**:
-
-- 🎙 **Onda vermelha animada** que cresce/ondula **conforme o volume da voz** (lê o socket de nível de áudio do voxtype)
-- ⏳ **"Transcrevendo..."** em azul com borda pulsante durante a transcrição
-- Some automaticamente quando idle
-
-**Importante para não "roubar" o cursor:**
-- A janela usa `Gtk.WindowTypeHint.NOTIFICATION` (tipo OSD do GNOME)
-- `set_accept_focus(False)` — nunca rouba o foco do aplicativo ativo
-- Ancorada no **topo da tela** — nunca cobre a caixa de diálogo onde está o cursor
-- **Click-through** (input shape vazia) — cliques atravessam o OSD, a seleção do campo se mantém
-- Assim, quando a transcrição termina, a colagem cai **na caixa onde você estava**
-
-O voxtype o inicia automaticamente se encontrar `voxtype-osd` no `PATH`.
-O script `scripts/voxtype-start` mata instâncias duplicadas (evita 2 micrófonos na tela).
+- Ubuntu 24.04+ / GNOME Wayland (X11 também funciona)
+- Voxtype 0.7.1+ ([.deb](https://github.com/woheller69/voxtype/releases))
+- `ydotool` + daemon `ydotoold` (injeção de teclas)
+- GPU com driver Vulkan (recomendado) — AMD: `mesa-vulkan-drivers`
 
 ---
 
-## 🔧 Problemas resolvidos
+## 🔍 Solução de problemas
 
-| Sintoma | Causa | Solução |
-|---------|-------|---------|
-| "Letras virando `:`" | ydotool com keymap US | `dotool_xkb_layout = "br"` |
-| Não digita no cursor (só card/clipboard) | wtype falha no GNOME Wayland | `driver_order` com `ydotool` primeiro |
-| Texto não sai no terminal (colava em outro lugar) | OSD roubava o foco com `present()` | OSD usa `NOTIFICATION` + `set_accept_focus(False)` + topo da tela + click-through |
-| Injeção lenta / texto na janela errada | `mode="type"` tecla-por-tecla + `pre_type_delay=0` + `wtype` (inexistente no GNOME) no caminho | `mode="paste"` (Ctrl+V atômico) + `pre_type_delay_ms=450` + `driver_order` sem `wtype` |
-| 2º toque "não finaliza" / parece travado | Toque durante `transcribing` é ignorado; disparo duplo do atalho | Atalho via `voxtype-toggle` (avisa "aguarde" + debounce) |
-| Dois micrófonos na tela | Instâncias duplicadas do OSD | `voxtype-start` mata duplicados |
-| Transcrição demora 70s | Modelo rodando na CPU (symlink do .deb aponta para CPU; `VOXTYPE_GPU=1` não vale no .deb) | `sudo voxtype setup gpu --enable` ou `voxtype-start` (executa `voxtype-vulkan`) |
-| Transcrição ruim em pt-BR | Modelo `.en` | `large-v3-turbo` + `language = "pt"` |
-| Sem feedback visual | Sem OSD | `voxtype-osd` |
+| Sintoma | Causa / Fix |
+|---|---|
+| Atalho não faz nada após reboot | O daemon não subiu — o atalho agora **inicia sozinho** (`voxtype-toggle`); ou rode `bash scripts/voxtype-start` |
+| Colagem demora ~1 min | `wtype` instalado (quebrado no GNOME) → `sudo apt remove wtype` |
+| Texto cola na janela errada | OSD agora é click-through e sem foco; aguarde o OSD azul sumir antes de clicar |
+| Transcrição lenta (CPU 100%) | Confira que `voxtype-start` está usando o binário Vulkan (`grep -i vulkan /tmp/voxtype.log`) |
+| Caracteres ABNT2 trocados | `mode = "paste"` resolve (nenhuma tecla é digitada) |
+
+Mais detalhes em [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ---
 
-## 🧩 Dependências
+## 🛠️ Desenvolvimento
 
-- [Voxtype](https://github.com/woheller69/voxtype) (0.7.1+)
-- `ydotool` + daemon `ydotoold` (roda como root para uinput)
-- `python3-gi` + `gir1.2-gtk-3.0` + `cairo` (para o OSD)
-- `wl-copy` (fallback clipboard)
-- GPU com driver Vulkan (opcional, recomendado)
-
----
-
-## 📄 Licença
-
-MIT — sinta-se livre para usar, modificar e compartilhar com a comunidade.
+```bash
+git pull && bash scripts/apply.sh   # aplica mudanças do repo no sistema
+tail -f /tmp/voxtype.log            # logs do daemon
+python3 docs/generate_screenshots.py  # regenera os screenshots do README
+```
 
 ---
 
 ## 🙏 Créditos
 
 - [Voxtype](https://github.com/woheller69/voxtype) — ferramenta base de ditado push-to-talk
-- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — motor de transcrição local
+- [whisper.cpp](https://github.com/ggerganov/whisper.cpp) — motor de transcrição local (GPU Vulkan)
+
+## 📄 Licença
+
+MIT — use, modifique e compartilhe à vontade.

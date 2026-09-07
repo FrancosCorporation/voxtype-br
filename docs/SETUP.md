@@ -24,15 +24,22 @@ voxtype --version  # deve retornar 0.7.1+
 ## 2. Dependências do sistema
 
 ```bash
-# ydotool (injeção de texto no Wayland — funciona no GNOME)
+# ydotool (injeção de teclas no Wayland — funciona no GNOME)
 sudo apt install ydotool
 
-# OSD visual (GTK3 + cairo)
-sudo apt install python3-gi gir1.2-gtk-3.0 python3-cairo
+# OSD visual (GTK3 + cairo + conversor gi-cairo)
+sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-3.0 python3-cairo
 
 # Clipboard fallback
 sudo apt install wl-clipboard
 ```
+
+> ⚠️ **Remova o `wtype`** se estiver instalado: ele é incompatível com o GNOME
+> Wayland (protocolo virtual-keyboard não suportado) e, na colagem, o Voxtype
+> tentava usá-lo primeiro — o que **travava a colagem por ~1 minuto**:
+> ```bash
+> sudo apt remove wtype
+> ```
 
 ---
 
@@ -99,10 +106,12 @@ chmod +x ~/.local/bin/voxtype-osd
 ```
 
 O Voxtype detecta e inicia o OSD automaticamente se estiver no `PATH`.
-O OSD mostra:
-- 🎙 microfone + ondas vermelhas animadas **conforme o volume da voz**
-- "Transcrevendo..." em azul com borda pulsante
+O OSD é um **overlay na tela** (parte inferior central) com:
+- 🎙 speaker + ondas vermelhas animadas **conforme o volume da voz**
+- ⏳ "Transcrevendo..." em azul com borda pulsante
 - some quando idle
+- **nunca rouba o foco**: `accept_focus(False)` + click-through — o texto cola
+  na caixa de diálogo onde você estava
 
 ---
 
@@ -156,9 +165,13 @@ Para voltar para CPU: `sudo voxtype setup gpu --disable`
 
 ---
 
-## 9. Autostart (opcional)
+## 9. Autostart (automático pelo apply.sh)
 
-Para iniciar o daemon automaticamente ao logar:
+O `scripts/apply.sh` já instala dois autostarts no login:
+- `voxtype.desktop` → inicia o **daemon** (o atalho nunca mais fica morto após reboot)
+- `voxtype-update.desktop` → puxa novidades do GitHub e reaplica sozinho
+
+Para instalar manualmente (se não usou o apply.sh):
 
 ```bash
 cat > ~/.config/autostart/voxtype.desktop << 'EOF'

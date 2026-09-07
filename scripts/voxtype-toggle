@@ -2,7 +2,7 @@
 # voxtype-toggle — Wrapper seguro para o atalho global do GNOME.
 # Uso (atalho): voxtype-toggle   # em vez de `voxtype record toggle` puro
 #
-# Resolve 3 problemas do toggle puro:
+# Resolve 4 problemas do toggle puro:
 #  1. Disparo duplo: o GNOME às vezes entrega o atalho 2x (press + release).
 #     Um debounce de ~1,2s ignora o segundo disparo, que senão iniciaria e
 #     pararia a gravação em seguida (ditado vazio).
@@ -12,6 +12,8 @@
 #     enviamos comando que seria ignorado.
 #  3. Comandos explícitos: em vez de um toggle cego, enviamos `record start`
 #     (quando idle) ou `record stop` (quando gravando), conforme o state file.
+#  4. Daemon morto (ex.: depois do reboot): em vez de falhar em silêncio,
+#     inicia o daemon (via voxtype-start) e aguarda ficar idle para gravar.
 set -u
 
 RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/voxtype"
@@ -21,12 +23,67 @@ DEBOUNCE_MS=1200
 
 VOXTYPE_BIN="$(command -v voxtype 2>/dev/null || echo /usr/bin/voxtype)"
 
+# Caminho do repo (escrito pelo apply.sh; fallback para o layout padrão)
+REPO_DIR=""
+if [ -f "$HOME/.local/share/voxtype/repo_path" ]; then
+    REPO_DIR="$(cat "$HOME/.local/share/voxtype/repo_path" 2>/dev/null || true)"
+fi
+if [ -z "$REPO_DIR" ] && [ -d "$HOME/Git/voxtype-br" ]; then
+    REPO_DIR="$HOME/Git/voxtype-br"
+fi
+
 notify() {
     command -v notify-send >/dev/null 2>&1 || return 0
     notify-send -a Voxtype -u low -t 1500 "Voxtype" "$1" 2>/dev/null || true
 }
 
+# Um dono de clipboard antigo (wl-copy do ditado anterior) pode travar a
+# próxima colagem por ~1min (o GNOME demora a liberar o dono anterior).
+# Mata antes de colar — o clipboard vazio troca na hora.
+kill_stale_clipboard() {
+    pkill -x wl-copy 2>/dev/null || true
+}
+
 now_ms() { date +%s%3N 2>/dev/null || echo $(( $(date +%s) * 1000 )); }
+
+daemon_alive() {
+    local pid
+    if [ -f "$RUNTIME_DIR/voxtype.lock" ]; then
+        pid=$(cat "$RUNTIME_DIR/voxtype.lock" 2>/dev/null || echo 0)
+        case "$pid" in ''|*[!0-9]*) pid=0 ;; esac
+        if [ "$pid" -gt 0 ] 2>/dev/null && kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    pgrep -f "voxtype.* daemon" >/dev/null 2>&1
+}
+
+current_state() {
+    if [ -f "$STATE_FILE" ]; then
+        tr -d '[:space:]' < "$STATE_FILE" 2>/dev/null || true
+    fi
+}
+
+ensure_daemon() {
+    if daemon_alive && [ "$(current_state)" = "idle" ]; then
+        return 0
+    fi
+    notify "Voxtype não estava rodando — iniciando…"
+    if [ -n "$REPO_DIR" ] && [ -x "$REPO_DIR/scripts/voxtype-start" ]; then
+        setsid bash "$REPO_DIR/scripts/voxtype-start" >/dev/null 2>&1 &
+    else
+        setsid "$VOXTYPE_BIN" daemon >/tmp/voxtype.log 2>&1 &
+    fi
+    # Aguarda o daemon carregar o modelo e entrar em idle (turbo ~1s, large-v3 ~12s)
+    for _ in $(seq 1 60); do
+        if daemon_alive && [ "$(current_state)" = "idle" ]; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    notify "Voxtype demorou para iniciar — tente o atalho de novo."
+    return 1
+}
 
 # --- Debounce: ignora disparos colados (duplo-fire do atalho) ---
 now=$(now_ms)
@@ -41,13 +98,13 @@ mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
 echo "$now" > "$DEBOUNCE_FILE" 2>/dev/null || true
 
 # --- Estado atual do daemon ---
-state=""
-[ -f "$STATE_FILE" ] && state=$(tr -d '[:space:]' < "$STATE_FILE" 2>/dev/null || true)
+state="$(current_state)"
 
 case "$state" in
     recording|streaming)
         # 2º toque legítimo: PARA, transcreve e cola na janela focada.
         # Não clique em outro lugar até o OSD azul ("Transcrevendo…") sumir.
+        kill_stale_clipboard
         exec "$VOXTYPE_BIN" record stop
         ;;
     transcribing)
@@ -57,8 +114,12 @@ case "$state" in
         exit 0
         ;;
     idle|stopped|"")
-        # 1º toque: começa a gravar. O foco permanece onde está (o OSD fica no
-        # topo e é click-through) — não precisa reclicar na caixa de diálogo.
+        # 1º toque: começa a gravar. Se o daemon não estiver pronto (reboot),
+        # inicia antes. O foco permanece onde está (o OSD fica no topo e é
+        # click-through) — não precisa reclicar na caixa de diálogo.
+        if ! ensure_daemon; then
+            exit 1
+        fi
         exec "$VOXTYPE_BIN" record start
         ;;
     *)

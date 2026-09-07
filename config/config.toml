@@ -17,7 +17,7 @@ sample_rate = 16000
 max_duration_secs = 60
 
 [whisper]
-model = "large-v3-turbo" # melhor qualidade pt-BR (multi-idioma)
+model = "large-v3-turbo" # melhor equilíbrio pt-BR: qualidade do large-v3 com ~2x mais velocidade (1.6 GB)
 language = "pt"          # Português do Brasil
 translate = false
 threads = 8              # ajuda em CPUs sem GPU
@@ -33,16 +33,13 @@ gpu_isolation = false    # mantém o modelo na memória — evita recarregar
 mode = "paste"
 paste_keys = "ctrl+v"    # tecla de colar (padrão; "shift+insert" é alternativa)
 fallback_to_clipboard = true
-# Ordem de drivers: SEM wtype — o GNOME Wayland não implementa o protocolo
-# virtual-keyboard, então tentar wtype só gasta tempo e gera erro no log.
-# (eitype/libei pode ser adicionado na frente se estiver instalado.)
-driver_order = ["dotool", "ydotool", "clipboard"]
+# Ordem de drivers: dotool não está no Ubuntu padrão — usa ydotool + clipboard
+driver_order = ["ydotool", "clipboard"]
 dotool_xkb_layout = "br"  # ABNT2 — vale se voltar a usar mode = "type"
 type_delay_ms = 0
-# Espera antes de injetar: dá tempo de soltar o Ctrl+Shift do atalho e do foco
-# voltar à caixa de diálogo. Com 0, os primeiros caracteres eram digitados com
-# modificadores ainda pressionados (texto corrompido/perdido).
-pre_type_delay_ms = 450
+# Espera ANTES de injetar: dá tempo de soltar o Ctrl+Shift do atalho e do foco
+# voltar à caixa de diálogo. AUMENTADO para 600ms para garantir foco.
+pre_type_delay_ms = 600
 # Mantém a transcrição no clipboard: se o foco estava na janela errada na hora
 # da colagem, é só clicar na caixa certa e dar Ctrl+V manualmente.
 restore_clipboard = false
@@ -55,6 +52,14 @@ on_transcription = true
 urgency = "normal"
 
 [osd]
-# Overlay visual (bin/voxtype-osd). O daemon inicia o `voxtype-osd` que estiver
-# no PATH. enabled = true é o padrão do voxtype; mantido aqui por clareza.
+# Overlay visual na tela (bin/voxtype-osd): speaker + onda senoidal conforme a
+# voz, sem roubar o foco (click-through). O daemon inicia o `voxtype-osd` que
+# estiver no PATH. enabled = true é o padrão do voxtype; mantido aqui por clareza.
 enabled = true
+
+[ui]
+# URL do repositório GitHub (para o menu do ícone na bandeja)
+# Deixe vazio para usar o padrão do Voxtype original
+repo_url = "https://github.com/FrancosCorporation/voxtype-br"
+# Mostrar notificações nativas (libnotify) além do OSD
+notify_enabled = true

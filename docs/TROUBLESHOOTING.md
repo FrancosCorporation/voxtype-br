@@ -32,14 +32,15 @@ tail -30 /tmp/voxtype.log
 # wtype failed: Compositor does not support the virtual keyboard protocol
 ```
 
-**Fix:** usar ydotool como driver principal:
+**Fix:** usar ydotool como driver principal e **remover o `wtype`** (ele é
+incompatível com o GNOME Wayland — ver seção 12):
 ```toml
-driver_order = ["ydotool", "wtype", "dotool", "clipboard"]
+driver_order = ["ydotool", "clipboard"]
 ```
 
 E garantir o daemon do ydotool rodando:
 ```bash
-sudo nohup ydotoold -p /run/user/$UID/.ydotool_socket -o $UID:$UID -P 0666 > /tmp/ydotoold.log 2>&1 &
+sudo nohup ydotoold -o $USER:$USER -P 0666 > /tmp/ydotoold.log 2>&1 &
 ```
 
 ---
@@ -221,7 +222,29 @@ nem cola o texto.
 
 ---
 
-## Comandos úteis
+## 12. Colagem demora ~1 minuto (ou parece travada em "Transcrevendo")
+
+**Sintoma:** a transcrição termina rápido, mas o texto só aparece (ou não
+aparece) ~50s depois; o estado fica preso em `transcribing`; o texto acaba
+colando na janela errada porque você já clicou em outro lugar.
+
+**Causa:** o `wtype` está instalado. Na colagem, o Voxtype tenta enviar o
+`Ctrl+V` primeiro via `wtype`, que é **incompatível com o GNOME Wayland**
+(protocolo virtual-keyboard não suportado) e faz a injeção travar.
+
+**Fix:**
+```bash
+sudo apt remove wtype
+bash scripts/voxtype-start   # reinicia o daemon
+```
+
+Depois disso a colagem é via **ydotool** e leva ~1,5s (confira com
+`tail -f /tmp/voxtype.log` — "Text pasted via clipboard + ctrl+v" logo após
+"Transcribed").
+
+---
+
+## 13. Comandos úteis
 
 ```bash
 voxtype config        # mostra configuração ativa
