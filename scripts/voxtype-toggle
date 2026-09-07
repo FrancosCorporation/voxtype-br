@@ -44,7 +44,7 @@ kill_stale_clipboard() {
     pkill -x wl-copy 2>/dev/null || true
 }
 
-now_ms() { date +%s%3N 2>/dev/null || echo $(( $(date +%s) * 1000 )); }
+now_ms() { echo $(( $(date +%s%N) / 1000000 )); }
 
 daemon_alive() {
     local pid
@@ -90,7 +90,9 @@ now=$(now_ms)
 if [ -f "$DEBOUNCE_FILE" ]; then
     last=$(cat "$DEBOUNCE_FILE" 2>/dev/null || echo 0)
     case "$last" in ''|*[!0-9]*) last=0 ;; esac
-    if [ $(( now - last )) -lt "$DEBOUNCE_MS" ]; then
+    # Só debounce se o timestamp antigo for válido e recente (formato antigo
+    # em nanossegundos geraria now - last negativo e travaria o atalho).
+    if [ "$last" -le "$now" ] && [ $(( now - last )) -lt "$DEBOUNCE_MS" ]; then
         exit 0
     fi
 fi

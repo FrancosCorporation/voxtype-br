@@ -37,20 +37,22 @@ fallback_to_clipboard = true
 driver_order = ["ydotool", "clipboard"]
 dotool_xkb_layout = "br"  # ABNT2 (teclado brasileiro)
 type_delay_ms = 0
-# Espera ANTES de digitar: (1) soltar o Ctrl+Shift do atalho; (2) a notificação
-# do GNOME (1s via shim notify-send) fechar e devolver o foco à caixa de texto.
-# Sem isso, o pop-up rouba o foco e a digitação vai para o vazio.
-pre_type_delay_ms = 1800
+# Espera ANTES de digitar: dá tempo de soltar o Ctrl+Shift do atalho e o foco
+# assentar. (O pop-up nativo está desligado — não há roubo de foco esperado.)
+pre_type_delay_ms = 800
 # Mantém a transcrição no clipboard: se o foco estava na janela errada na hora
 # da colagem, é só clicar na caixa certa e dar Ctrl+V manualmente.
 restore_clipboard = false
 restore_clipboard_delay_ms = 500
 
 [output.notification]
-# Pop-up nativo ativado: feedback de que a transcrição terminou (mostra o texto).
+# Pop-up nativo DESLIGADO: o pop-up do GNOME rouba o foco do teclado quando
+# aparece (verificado empiricamente) e a digitação vai para o vazio. O feedback
+# de transcrição fica no OSD (onda azul "Transcrevendo...") e no texto que
+# aparece direto na caixa de texto.
 on_recording_start = false
 on_recording_stop = false
-on_transcription = true
+on_transcription = false
 urgency = "normal"
 
 [osd]
