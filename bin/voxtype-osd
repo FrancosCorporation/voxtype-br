@@ -79,6 +79,12 @@ def draw_osd(cr, width, height, state, level, phase, tick):
     cr.set_source_rgba(0, 0, 0, 0)
     cr.paint()
 
+    # Idle: janela invisível (sem desenhar nada) — nunca desmapeia a janela
+    # para não mexer no foco.
+    if state not in ("recording", "streaming", "transcribing"):
+        cr.restore()
+        return
+
     lvl = max(0.0, min(1.0, level))
     w, h = float(width), float(height)
     cx, cy = w / 2.0, h / 2.0
@@ -204,7 +210,10 @@ class VoxtypeOSD:
                 gdk_win.input_shape_combine_region(Gdk.Region(), 0, 0)
         except Exception:
             pass
-        self.window.hide()
+        # JANELA SEMPRE MAPEADA: mostrar/esconder (map/unmap) faz o compositor
+        # mexer no foco (o texto caía em outra janela). Idle = conteúdo
+        # transparente; o desenho só aparece em recording/transcribing.
+        # A transparência é feita no draw (idle pinta nada).
 
         threading.Thread(target=self.watch_state, daemon=True).start()
         threading.Thread(target=self.watch_audio, daemon=True).start()
@@ -233,11 +242,7 @@ class VoxtypeOSD:
 
     def set_state(self, state):
         self.state = state
-        visible = state in ("recording", "streaming", "transcribing")
-        if visible and not self.window.get_visible():
-            self.window.show_all()
-        elif not visible and self.window.get_visible():
-            self.window.hide()
+        # Sem show/hide: a janela fica sempre mapeada (foco não é mexido).
         self.area.queue_draw()
         return False
 

@@ -20,8 +20,23 @@ ok "config.toml instalado em ~/.config/voxtype/"
 cp "$ROOT_DIR/bin/voxtype-osd" ~/.local/bin/voxtype-osd
 cp "$ROOT_DIR/scripts/voxtype-toggle" ~/.local/bin/voxtype-toggle
 cp "$ROOT_DIR/scripts/voxtype-type" ~/.local/bin/voxtype-type
+cp "$ROOT_DIR/scripts/voxtype-settings" ~/.local/bin/voxtype-settings
+cp "$ROOT_DIR/scripts/voxtype-keys-reset" ~/.local/bin/voxtype-keys-reset
 cp "$ROOT_DIR/scripts/notify-send-shim" ~/.local/bin/notify-send
-chmod +x ~/.local/bin/voxtype-osd ~/.local/bin/voxtype-toggle ~/.local/bin/voxtype-type ~/.local/bin/notify-send
+chmod +x ~/.local/bin/voxtype-osd ~/.local/bin/voxtype-toggle ~/.local/bin/voxtype-type ~/.local/bin/voxtype-settings ~/.local/bin/voxtype-keys-reset ~/.local/bin/notify-send
+
+mkdir -p ~/.local/share/applications
+cat > ~/.local/share/applications/francosvox-settings.desktop <<EOF
+[Desktop Entry]
+Type=Application
+Name=FrancosVox
+Comment=Configurações do ditado por voz (modo de saída)
+Exec=$HOME/.local/bin/voxtype-settings
+Icon=$HOME/.local/share/voxtype/assets/francosvox-icon.svg
+Terminal=false
+Categories=Utility;
+EOF
+ok "menu instalado (busque 'FrancosVox' no GNOME)"
 
 cp -r "$ROOT_DIR/assets/"* ~/.local/share/voxtype/assets/
 ok "assets instalados em ~/.local/share/voxtype/assets/"

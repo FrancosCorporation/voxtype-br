@@ -78,10 +78,11 @@ done
 
 if [ "$ok" = 1 ]; then
     sleep 0.3  # clipboard assentado no compositor
-    # /usr/bin/ydotool DIRETO: o wrapper ~/.local/bin/ydotool estraga
-    # combinações nomeadas (key ctrl+shift+v) e insere 180ms por tecla.
-    /usr/bin/ydotool key ctrl+shift+v 2>/dev/null || true
-    echo "paste enviado (Ctrl+Shift+V)"
+    # Keycodes BRUTOS (29=Ctrl, 42=Shift, 47=V): o ydotool desta versão NÃO
+    # injeta combinações nomeadas ("key ctrl+shift+v" sai sem efeito).
+    # Sequência completa DOWN..UP, verificada em monitor de eventos.
+    /usr/bin/ydotool key 29:1 42:1 47:1 47:0 42:0 29:0 2>/dev/null || true
+    echo "paste enviado (Ctrl+Shift+V por keycodes)"
 else
     # Plano B: digitação visível
     echo "wl-copy falhou — plano B: digitação"
