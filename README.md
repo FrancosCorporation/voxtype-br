@@ -82,6 +82,7 @@ a caixa de diálogo e **não rouba o foco**:
 | `scripts/francosvox-translate-start` | Garante o tradutor local (LibreTranslate :5000) **sob demanda** — watchdog encerra após 10 min ocioso (libera RAM) |
 | `scripts/francosvox-keys-reset` | Libera teclas injetadas que ficaram presas (anti-tecla-presa) |
 | `scripts/setup-gnome-shortcut.sh` | Registra `Ctrl+Shift+Espaço` no GNOME |
+| `scripts/install.sh` | **Instalador completo em 1 comando** (deps + Voxtype + modelo + tradutor + ydotoold + apply) |
 | `scripts/apply.sh` | Sincroniza o repo → sistema (config, OSD, atalho, autostarts, menu) — **preserva seus idiomas** ao atualizar |
 | `scripts/francosvox-autoupdate.sh` | Auto-update no login (pull + apply) |
 | `whisper-http-server.js` | API HTTP `/transcribe` (opcional, para integrações) |
@@ -89,6 +90,25 @@ a caixa de diálogo e **não rouba o foco**:
 ---
 
 ## 🚀 Instalação
+
+### Tudo em UM comando (recomendado)
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/FrancosCorporation/FrancosVox/main/scripts/install.sh)"
+```
+
+O instalador faz tudo sozinho (pode rodar de novo — só completa o que falta):
+
+| Passo | O que faz |
+|---|---|
+| 1. Dependências | `ydotool`, `wl-clipboard`, GTK/AppIndicator, `venv` — e **remove o `wtype`** (incompatível com GNOME Wayland) |
+| 2. Voxtype | Baixa o `.deb` oficial + modelo Whisper `large-v3-turbo` (GPU Vulkan) |
+| 3. Tradutor | Venv isolado + LibreTranslate + modelos Argos (offline, sob demanda) |
+| 4. ydotool | Serviço systemd — daemon de injeção de teclas inicia sozinho |
+| 5. apply.sh | OSD, atalho `Ctrl+Shift+Espaço`, bandeja, autostarts, menu |
+
+> Após o fim: **faça logout/login** (entra no grupo `input`) e é só usar.
+> Instalação manual detalhada: veja as seções abaixo.
 
 ### 1. Voxtype + dependências
 
