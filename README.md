@@ -46,6 +46,11 @@ sistema de ditado completo para **Português do Brasil**:
 | Teclas ABNT2 saem trocadas (`;` vira `:`) | Colagem **atômica via Ctrl+V** (nenhuma tecla é digitada) |
 | Atalho morto após o reboot | **Autostart do daemon** no login + atalho que **auto-recupera** o daemon |
 | 2º toque ignorado / disparo duplo | Wrapper `francosvox-toggle` com debounce e trava durante a transcrição |
+| Tradução só para inglês (e instável) | **Tradutor local real** (LibreTranslate + Argos, offline): pt→en/es direto, fr/de/it via inglês |
+| Não saber quando o daemon reinicia | **Loading no OSD** ("Reiniciando…" com anel girando) + **ícone na barra superior** com estado e ⟳ |
+| RAM presa após uso | Tradutor **sob demanda**: modelo só carrega quando traduz (~128 MB) e o servidor **se auto-encerra após 10 min ocioso** |
+| OSD aparece na dock como ícone genérico | OSD roda via **XWayland** — `skip-taskbar` funciona e a dock fica limpa |
+| Onda do OSD congela após reinício | Limpeza do `audio.sock` órfão no start — conexão sempre renovada |
 
 ---
 
@@ -67,15 +72,17 @@ a caixa de diálogo e **não rouba o foco**:
 
 | Arquivo | Função |
 |---|---|
-| `bin/francosvox-osd` | Overlay GTK3 com speaker + onda senoidal animada (sempre mapeado — não rouba o foco) |
-| `config/config.toml` | Configuração pt-BR: GPU, modelo, saída em arquivo, delay |
-| `scripts/francosvox-start` | Inicia o daemon com o binário Vulkan (GPU) e mata duplicados |
+| `bin/francosvox-osd` | Overlay GTK3 com speaker + onda senoidal animada (sempre mapeado — não rouba o foco; rodado via XWayland para sumir da dock) |
+| `config/config.toml` | Configuração pt-BR: GPU, modelo, idiomas de entrada/saída, saída em arquivo |
+| `scripts/francosvox-start` | Inicia o daemon com o binário Vulkan (GPU), limpa socket órfão e garante o tradutor |
 | `scripts/francosvox-toggle` | Wrapper do atalho: debounce, trava na transcrição, auto-recuperação do daemon |
-| `scripts/francosvox-type` | **Cola a transcrição** (wl-copy + Ctrl+Shift+V por keycodes) depois que o foco assenta |
-| `scripts/francosvox-settings` | Diálogo de configuração (colar instantâneo × digitar) — busque "FrancosVox" no menu |
+| `scripts/francosvox-type` | **Cola a transcrição** (wl-copy + Ctrl+Shift+V por keycodes) e **traduz antes de colar** quando a saída é outro idioma |
+| `scripts/francosvox-settings` | Painel de configuração: **entrada** (o que você fala) + **saída** (tradução), colar instantâneo × digitar — busque "FrancosVox" no menu |
+| `scripts/francosvox-tray` | **Ícone na barra superior** (topo, ao lado do Bluetooth): estado 🎙/🎤/⏳, menu Configurações/Reiniciar daemon/Sair |
+| `scripts/francosvox-translate-start` | Garante o tradutor local (LibreTranslate :5000) **sob demanda** — watchdog encerra após 10 min ocioso (libera RAM) |
 | `scripts/francosvox-keys-reset` | Libera teclas injetadas que ficaram presas (anti-tecla-presa) |
 | `scripts/setup-gnome-shortcut.sh` | Registra `Ctrl+Shift+Espaço` no GNOME |
-| `scripts/apply.sh` | Sincroniza o repo → sistema (config, OSD, atalho, autostart, menu) |
+| `scripts/apply.sh` | Sincroniza o repo → sistema (config, OSD, atalho, autostarts, menu) — **preserva seus idiomas** ao atualizar |
 | `scripts/francosvox-autoupdate.sh` | Auto-update no login (pull + apply) |
 | `whisper-http-server.js` | API HTTP `/transcribe` (opcional, para integrações) |
 
@@ -110,6 +117,23 @@ git clone https://github.com/FrancosCorporation/FrancosVox.git ~/Git/voxtype-br
 cd ~/Git/voxtype-br
 bash scripts/apply.sh        # instala config, OSD, atalho, autostart e inicia o daemon
 ```
+
+### 2b. Tradutor local (para saída em outro idioma — en/es/fr/de/it)
+
+```bash
+# Instala o tradutor offline (LibreTranslate + modelos Argos) num venv isolado
+python3 -m venv ~/.local/voxtype-translator
+~/.local/voxtype-translator/bin/pip install libretranslate
+
+# Modelos de tradução (pt-en/pt-es diretos; fr/de/it via inglês)
+export PATH="$HOME/.local/voxtype-translator/bin:$PATH"
+argospm install translate-pt_en translate-pt_es translate-en_pt translate-es_pt
+argospm install translate-en_fr translate-en_de translate-en_it
+```
+
+> O tradutor é **sob demanda**: o modelo carrega só quando você dita com a saída
+> em outro idioma e o servidor se auto-encerra após 10 min sem uso (~128 MB base,
+> RAM devolvida ao sistema). O `apply.sh` já instala o autostart dele.
 
 ### 3. ydotool (injeção de teclas no Wayland)
 
@@ -165,6 +189,8 @@ file_path = "/tmp/francosvox-transcript.txt"
 > GPU); a saída é traduzida na hora de colar por um **tradutor local**
 > (LibreTranslate + modelos Argos, offline em `localhost:5000`) — inglês e
 > espanhol direto, francês/alemão/italiano via inglês (pt→en→fr, etc.).
+> Ao aplicar uma mudança, o OSD mostra **"Reiniciando…"** (anel girando na
+> pílula) e o ícone da barra superior vira **⟳** até o servidor voltar.
 
 ---
 
@@ -174,6 +200,8 @@ file_path = "/tmp/francosvox-transcript.txt"
 - Voxtype 0.7.1+ ([.deb](https://github.com/woheller69/voxtype/releases))
 - `ydotool` + daemon `ydotoold` (injeção de teclas)
 - GPU com driver Vulkan (recomendado) — AMD: `mesa-vulkan-drivers`
+- Python 3 + venv para o tradutor local (só se usar saída traduzida)
+- `gir1.2-ayatanaappindicator3-0.1` (ícone na barra superior)
 
 ---
 
@@ -188,6 +216,8 @@ file_path = "/tmp/francosvox-transcript.txt"
 | Texto some na transcrição | O pop-up do GNOME rouba o foco do teclado — notificações desligadas (feedback pelo OSD) |
 | Transcrição lenta (CPU 100%) | Confira que `francosvox-start` está usando o binário Vulkan (`grep -i vulkan /tmp/francosvox.log`) |
 | Caracteres ABNT2 trocados | A colagem via clipboard não digita teclas — acentos saem corretos |
+| Onda do OSD congelada | Socket de áudio órfão de um reinício corrido — rode `bash scripts/francosvox-start` (limpa o `audio.sock` e recria a conexão) |
+| Saída traduzida cola o texto original | Tradutor local encerrado pelo watchdog (10 min ocioso) — ele **reinicia sozinho** no próximo ditado; se persistir, `bash ~/.local/bin/francosvox-translate-start` |
 
 Mais detalhes em [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
