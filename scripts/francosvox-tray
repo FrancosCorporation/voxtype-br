@@ -14,14 +14,31 @@ import sys
 import gi
 
 gi.require_version("AyatanaAppIndicator3", "0.1")
-from gi.repository import AyatanaAppIndicator3 as AppIndicator, Gtk, GLib
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import AyatanaAppIndicator3 as AppIndicator, Gtk, GLib, GdkPixbuf
 
 RUNTIME_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"), "voxtype")
 STATE_FILE = os.path.join(RUNTIME_DIR, "state")
 RESTART_FLAG = os.path.join(RUNTIME_DIR, "restarting")
 LABELS = {"idle": "🎙️", "recording": "🎤", "transcribing": "⏳"}
-ICON_MIC = "audio-input-microphone-symbolic"
-ICON_BUSY = "view-refresh-symbolic"
+
+ASSETS_DIR = os.path.expanduser("~/.local/share/francosvox/assets")
+ICON_MIC_PATH = os.path.join(ASSETS_DIR, "francosvox-icon.svg")
+ICON_BUSY_PATH = os.path.join(ASSETS_DIR, "voxtype-icon.svg")
+
+
+def load_icon(path, size=22):
+    """Carrega SVG local e retorna GdkPixbuf.Pixbuf para o indicator."""
+    try:
+        if os.path.exists(path):
+            return GdkPixbuf.Pixbuf.new_from_file_at_size(path, size, size)
+    except Exception:
+        pass
+    return None
+
+
+ICON_MIC_PIXBUF = load_icon(ICON_MIC_PATH)
+ICON_BUSY_PIXBUF = load_icon(ICON_BUSY_PATH)
 
 
 def current_state():
@@ -77,22 +94,28 @@ def build_menu():
 
 def main():
     ind = AppIndicator.Indicator.new(
-        "francosvox", ICON_MIC,
+        "francosvox", "",
         AppIndicator.IndicatorCategory.APPLICATION_STATUS)
     ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
     ind.set_menu(build_menu())
+
+    def set_indicator_icon(pixbuf):
+        if pixbuf:
+            ind.set_icon_full(pixbuf, "FrancosVox")
+        else:
+            ind.set_icon("audio-input-microphone-symbolic")
 
     def update():
         # Durante o reinício do daemon (painel Aplicar / menu Reiniciar):
         # ícone de loading + "⟳" até o francosvox-start limpar a flag.
         if os.path.exists(RESTART_FLAG):
             ind.set_label("⟳", "francosvox")
-            ind.set_icon(ICON_BUSY)
+            set_indicator_icon(ICON_BUSY_PIXBUF)
             ind.set_title("FrancosVox — reiniciando…")
         else:
             st = current_state()
             ind.set_label(LABELS.get(st, LABELS["idle"]), "francosvox")
-            ind.set_icon(ICON_MIC)
+            set_indicator_icon(ICON_MIC_PIXBUF)
             ind.set_title("FrancosVox")
         return True
 

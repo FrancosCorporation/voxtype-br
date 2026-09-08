@@ -115,11 +115,11 @@ cat > ~/.config/autostart/francosvox.desktop <<EOF
 Type=Application
 Name=FrancosVox
 Comment=Daemon de ditado por voz com GPU (Ctrl+Shift+Espaço)
-Exec=bash $ROOT_DIR/scripts/francosvox-start
+Exec=bash -c 'for i in {1..30}; do systemctl --user is-active ydotoold >/dev/null 2>&1 && break; sleep 1; done; exec bash $ROOT_DIR/scripts/francosvox-start'
 X-GNOME-Autostart-enabled=true
 NoDisplay=true
 EOF
-ok "autostart do daemon instalado (sobe sozinho no login)"
+ok "autostart do daemon instalado (sobe sozinho no login, aguarda ydotoold)"
 
 cat > ~/.config/autostart/francosvox-tray.desktop <<EOF
 [Desktop Entry]
