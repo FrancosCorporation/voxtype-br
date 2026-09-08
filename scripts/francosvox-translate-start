@@ -1,10 +1,16 @@
 #!/bin/bash
 # francosvox-translate-start — Garante o tradutor local (libretranslate :5000).
 # Usado no autostart e pelo francosvox-start. Se já estiver de pé, não faz nada.
+#
+# Economia de RAM: SEM --load-only (o modelo do par usado carrega só quando
+# precisa, ~100-200MB em vez de ~500MB) + watchdog que encerra o servidor
+# depois de 10 minutos sem pedidos — a RAM volta ao sistema sozinha. O
+# francosvox-type reinicia na hora se precisar traduzir.
 set -u
 
 BIN="$HOME/.local/voxtype-translator/bin/libretranslate"
-MODELS="pt_en,pt_es,en_pt,en_fr,es_pt,en_de,en_it"
+LOG=/tmp/libretranslate.log
+WATCHDOG="francosvox-translate-watchdog"
 
 if [ ! -x "$BIN" ]; then
     echo "tradutor não instalado (skip)" >&2
@@ -15,6 +21,21 @@ if curl -s --max-time 2 http://127.0.0.1:5000/health >/dev/null 2>&1; then
     exit 0
 fi
 
-setsid nohup "$BIN" --load-only "$MODELS" --host 127.0.0.1 --port 5000 \
-    > /tmp/libretranslate.log 2>&1 < /dev/null &
+setsid nohup timeout 7200 "$BIN" --host 127.0.0.1 --port 5000 \
+    > "$LOG" 2>&1 < /dev/null &
+
+# Watchdog de ociosidade: mata o servidor após 10 min sem pedidos (libera RAM)
+if ! pgrep -f "$WATCHDOG" >/dev/null 2>&1; then
+    setsid nohup bash -c '
+        IDLE_S=600
+        while pgrep -f "libretranslate --host 127.0.0.1" >/dev/null 2>&1; do
+            now=$(date +%s)
+            lm=$(stat -c %Y "'"$LOG"'" 2>/dev/null || echo "$now")
+            if [ $((now - lm)) -ge $IDLE_S ]; then
+                pkill -f "libretranslate --host 127.0.0.1"
+            fi
+            sleep 60
+        done
+    ' > /dev/null 2>&1 < /dev/null &
+fi
 exit 0

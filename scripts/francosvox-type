@@ -102,6 +102,16 @@ tgt_lang="$(grep -oP '^\s*target_language\s*=\s*"?\K[^"\s#]+' "$CONFIG_FILE" 2>/
 echo "idiomas: entrada=$src_lang saída=$tgt_lang"
 
 if [ "$tgt_lang" != "$src_lang" ]; then
+    # Tradutor local pode ter sido encerrado pelo watchdog de ociosidade
+    # (economia de RAM). Reinicia sob demanda e aguarda ficar pronto.
+    if ! curl -s --max-time 2 http://127.0.0.1:5000/health >/dev/null 2>&1; then
+        echo "tradutor ocioso encerrado — reiniciando…"
+        bash "$HOME/.local/bin/francosvox-translate-start" 2>/dev/null || true
+        for _ in $(seq 1 40); do
+            curl -s --max-time 2 http://127.0.0.1:5000/health >/dev/null 2>&1 && break
+            sleep 0.5
+        done
+    fi
     translated="$(translate_text "$text" "$src_lang" "$tgt_lang")"
     if [ -n "$translated" ]; then
         text="$translated"
